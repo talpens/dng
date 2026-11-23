@@ -1,10 +1,10 @@
-# The site moved back to GitHub Pages (https://talpens.github.io/dng/).
+# The site moved back to GitHub Pages (https://talpens.github.io/dng/site/).
 # Netlify now only forwards old links there; the query string (?t= / ?admin=) is kept.
 [build]
   publish = "site"
 
 [[redirects]]
   from = "/*"
-  to = "https://talpens.github.io/dng/:splat"
+  to = "https://talpens.github.io/dng/site/:splat"
   status = 301
   force = true

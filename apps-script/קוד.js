@@ -47,7 +47,7 @@ function setup() {
   const st = settings_();
   if (!st.ADMIN_KEY) setSetting_('ADMIN_KEY', randomToken_(24));
   if (!st.SEATS) setSetting_('SEATS', '8');
-  if (!st.APP_URL) setSetting_('APP_URL', 'https://talpens.github.io/dng/');
+  if (!st.APP_URL) setSetting_('APP_URL', 'https://talpens.github.io/dng/site/');
   if (!st.NOTIFY_EMAIL) setSetting_('NOTIFY_EMAIL', Session.getEffectiveUser().getEmail());
   const def = ss.getSheetByName('Sheet1') || ss.getSheetByName('גיליון1');
   if (def && ss.getSheets().length > 1 && def.getLastRow() === 0) ss.deleteSheet(def);
@@ -316,4 +316,4 @@ function adminAction(adminKey, act, p) {
 }
 
 /** מעדכן את כתובת האפליקציה לקישורים חדשים */
-function setAppUrl() { setSetting_('APP_URL', 'https://talpens.github.io/dng/'); console.log('APP_URL: ' + settings_().APP_URL); }
+function setAppUrl() { setSetting_('APP_URL', 'https://talpens.github.io/dng/site/'); console.log('APP_URL: ' + settings_().APP_URL); }

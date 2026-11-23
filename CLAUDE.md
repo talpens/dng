@@ -16,12 +16,12 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
      cancelMakeup, adminState, adminAction) and `Index.html` (whole client UI, vanilla JS, `google.script.run`).
    - Data lives in a Google Sheet ("שיעורים – סטודיו DNG") with tabs: Students, Invites, Absences,
      Makeups, Cancelled, Settings. All cells are text. Settings holds ADMIN_KEY, SEATS (8),
-     NOTIFY_EMAIL, APP_URL (base for invite links; must be https://talpens.github.io/dng/).
+     NOTIFY_EMAIL, APP_URL (base for invite links; must be https://talpens.github.io/dng/site/).
    - Source lives in `apps-script/` (pulled with clasp). The Sheet ID is kept in Script Properties (SHEET_ID), not in code.
 2. **App shell: `site/`** (static, no build). `site/index.html` full-screens the web app in an iframe,
    plus `manifest.webmanifest` and icons so it installs to the phone home screen.
-   - Live: https://talpens.github.io/dng/ (GitHub Pages, deployed by `.github/workflows/pages.yml` on every
-     push to `main`; it publishes only `site/`). Pages source in repo settings must be "GitHub Actions".
+   - Live: https://talpens.github.io/dng/site/ (GitHub Pages, "deploy from branch" = root of `main`, publishes on
+     every push). The root `index.html` forwards https://talpens.github.io/dng/ to `site/`, keeping ?t= / ?admin=.
    - Netlify (studio-dng.netlify.app) was used briefly but its free plan forces a "Powered by Netlify" badge
      over the logo. `netlify.toml` now only 301-redirects every old Netlify link to GitHub Pages, keeping ?t= / ?admin=.
    - `index.html` reads `?t=TOKEN` (student) or `?admin=KEY` (admin), remembers it in localStorage,
@@ -43,7 +43,7 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
 
 ## Secrets / privacy
 - Never commit the admin key, the Sheet ID, student names/phones, or tokens. This repo is public.
-- The admin link is `https://talpens.github.io/dng/?admin=<ADMIN_KEY>`; the key is in the Settings tab.
+- The admin link is `https://talpens.github.io/dng/site/?admin=<ADMIN_KEY>`; the key is in the Settings tab.
 
 ## First-time setup (done 2026-11-23; kept for reference / a new machine)
 1. Tal turns on the Apps Script API: https://script.google.com/home/usersettings → "Google Apps Script API" → On.
@@ -64,4 +64,4 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
 - After deploying, open the admin link and check it loads.
 
 ## Changing the app shell
-- Edit files in `site/`, commit, push to `main` → the Pages workflow publishes within a minute or two.
+- Edit files in `site/`, commit, push to `main` → GitHub Pages publishes within a minute or two.
