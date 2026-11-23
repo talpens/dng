@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>סטודיו DNG</title>
+<meta name="theme-color" content="#dfe5d6">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="סטודיו DNG">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+  html,body{margin:0;height:100%;background:#dfe5d6;overflow:hidden}
+  iframe{position:fixed;inset:0;width:100%;height:100%;border:0;padding-top:env(safe-area-inset-top);box-sizing:border-box;background:#dfe5d6}
+  .msg{font:15px system-ui,sans-serif;color:#161616;text-align:center;padding:40vh 24px 0;line-height:1.7}
+  .spin{position:fixed;inset:0;display:grid;place-items:center;pointer-events:none;transition:opacity .3s}
+  .spin img{width:72px;height:72px;border-radius:18px;animation:p 1.2s ease-in-out infinite}
+  @keyframes p{50%{opacity:.4}}
+</style>
+</head>
+<body>
+<div class="spin" id="spin"><img src="icon-192.png" alt=""></div>
+<script>
+(function () {
+  // The Google Apps Script web app this page wraps.
+  var APP = 'https://script.google.com/macros/s/AKfycbyMML5WkOLAWTvZxXvFuySfhXMS4FM2mXqsxD_Tep1jxbah-0aSBfWJ0JBiauYgueZZNw/exec';
+  var KEY = 'dng-link';
+  var q = new URLSearchParams(location.search);
+  var t = q.get('t'), a = q.get('admin'), saved = null;
+  try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) {}
+  // A link with a token always wins and is remembered, so the home-screen icon reopens it.
+  if (t || a) { saved = t ? { t: t } : { admin: a }; try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {} }
+  if (!saved) {
+    document.body.innerHTML = '<div class="msg">כדי להיכנס צריך לפתוח את הקישור האישי שקיבלת מהסטודיו.</div>';
+    return;
+  }
+  var src = APP + (saved.t ? '?t=' + encodeURIComponent(saved.t) : '?admin=' + encodeURIComponent(saved.admin));
+  var f = document.createElement('iframe');
+  f.src = src; f.title = 'סטודיו DNG';
+  f.allow = 'clipboard-write';
+  f.onload = function () { document.getElementById('spin').style.opacity = 0; };
+  document.body.appendChild(f);
+  // Keep the address bar URL carrying the token (iOS uses it for "Add to Home Screen").
+  if (!t && !a) history.replaceState(null, '', '?' + (saved.t ? 't=' + saved.t : 'admin=' + saved.admin));
+})();
+</script>
+</body>
+</html>
