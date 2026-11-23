@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Hebrew:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#dfe5d6;--card:#e9ede2;--card2:#f2f4ee;--ink:#161616;--mid:#6d7268;--hair:rgba(22,22,22,.10);--pill:#161616;--pillink:#e9ede2;--accent:#e8742b;--ok:#3f7a4a;--mono:'IBM Plex Mono',ui-monospace,monospace}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans Hebrew',system-ui,sans-serif}
+body{padding:14px 12px 28px;max-width:560px;margin:0 auto}
+button{font-family:inherit;cursor:pointer}
+header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 2px 12px}
+.brand{display:flex;align-items:center;gap:10px}.brand img{width:40px;height:40px}
+h1{font-size:17px;margin:0;font-weight:700;line-height:1.15}h1 span{display:block;font:400 11px var(--mono);color:var(--mid)}
+.who{font-size:12px;color:var(--mid)}
+.pills{display:flex;gap:4px;margin:0 0 12px;background:var(--pill);border-radius:999px;padding:4px}
+.pills button{flex:1;border:0;background:none;color:rgba(233,237,226,.6);border-radius:999px;padding:9px 4px;font-size:13px;font-weight:500}
+.pills button.on{background:var(--pillink);color:var(--pill)}
+.n{display:inline-grid;place-items:center;min-width:18px;height:18px;border-radius:9px;background:var(--accent);color:#fff;font:600 11px var(--mono);margin-inline-start:4px;padding:0 4px}
+.card{background:var(--card);border-radius:20px;padding:14px;margin:0 0 10px}
+.card h2{font-size:16px;margin:0 0 8px;font-weight:600}
+.lesson.past{opacity:.55}
+.lesson.cancelled{background:repeating-linear-gradient(135deg,var(--card) 0 12px,#e2e6da 12px 24px)}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.day{font-size:17px;font-weight:600}.when{font:400 12px var(--mono);color:var(--mid);margin-top:2px}
+.seats{text-align:left}.seats b{font:500 20px var(--mono)}.seats small{display:block;font-size:11px;color:var(--mid)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.muted{color:var(--mid);font-size:12px}
+.field{display:flex;flex-direction:column;gap:4px;margin:0 0 10px;font-size:13px}
+.field input,.field select{border:1px solid var(--hair);border-radius:12px;padding:11px 12px;font:15px 'IBM Plex Sans Hebrew',sans-serif;background:var(--card2);color:var(--ink);width:100%}
+.btn{border:0;border-radius:14px;padding:12px 14px;font-size:14px;font-weight:600;background:var(--card2);color:var(--ink)}
+.btn.pri{background:var(--ink);color:var(--pillink)}.btn.ok{background:var(--ok);color:#fff}
+.btn.sm{padding:7px 12px;font-size:12px;border-radius:999px}.btn:disabled{opacity:.4}
+.mini{border:0;background:var(--card2);border-radius:999px;padding:5px 10px;font-size:12px;color:var(--ink)}
+.credits{display:flex;align-items:center;justify-content:space-between;background:var(--pill);color:var(--pillink);border-radius:20px;padding:14px 16px;margin:0 0 12px}
+.credits b{font:500 28px var(--mono)}
+.tag{display:inline-block;font-size:11px;border-radius:999px;padding:2px 8px;background:var(--card2)}
+.tag.mine{background:var(--ink);color:var(--pillink)}.tag.wait{background:var(--accent);color:#fff}.tag.ok{background:var(--ok);color:#fff}.tag.off{background:#c9cfc0}
+.req{border-top:1px solid var(--hair);padding:10px 0}.req:first-of-type{border-top:0}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--hair);font-size:13px;flex-wrap:wrap}
+.li:first-child{border-top:0}.x{text-decoration:line-through;color:var(--mid)}
+.empty{text-align:center;color:var(--mid);font-size:13px;padding:18px 0}
+.notice{border-radius:16px;padding:12px 14px;font-size:13px;line-height:1.6;margin:0 0 12px;background:var(--card)}
+.big{font-size:15px;line-height:1.7}
+.link{width:100%;font:12px var(--mono);direction:ltr;border:1px solid var(--hair);border-radius:10px;padding:8px;background:var(--card2)}
+.foot{font-size:11px;color:var(--mid);text-align:center;margin-top:16px;line-height:1.6}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--pill);color:var(--pillink);padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:9}
+.toast.on{opacity:1}
+.busy{opacity:.55;pointer-events:none}
+</style>
+</head>
+<body>
+<header><div class="brand"><img src="data:image/png;base64,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" alt=""><h1>סטודיו DNG<span>שיעורים והשלמות</span></h1></div><div class="who" id="who"></div></header>
+<div id="app"><div class="empty">טוען…</div></div>
+<div class="toast" id="toast"></div>
+<script>
+var BOOT = <?!= boot ?>;
+var $=function(id){return document.getElementById(id);};
+function esc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function toast(m){var t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(function(){t.classList.remove('on');},2200);}
+function fmtD(iso){var p=iso.split('-');return (+p[2])+'.'+(+p[1]);}
+var SL={},S=null,week=0,tab='',ADMIN=!!BOOT.admin;
+function slotName(id){var s=SL[id];return s?s.day+' '+s.part:'—';}
+function tm(s){return '<bdi dir="ltr">'+s.from+'–'+s.to+'</bdi>';}
+function call(fn,args,ok){
+  $('app').classList.add('busy');
+  var r=google.script.run.withSuccessHandler(function(res){$('app').classList.remove('busy');ok(res);})
+    .withFailureHandler(function(e){$('app').classList.remove('busy');toast((e&&e.message||'שגיאה').replace(/^Error:\s*/,''));});
+  r[fn].apply(r,args);
+}
+function setState(st){S=st;if(st&&st.slots)st.slots.forEach(function(s){SL[s.id]=s;});render();}
+function render(){
+  var app=$('app');
+  if(!S){app.innerHTML='<div class="empty">טוען…</div>';return;}
+  if(ADMIN){app.innerHTML=adminView();bindAdmin();return;}
+  app.innerHTML=studentView();bindStudent();
+}
+/* ---------------- student ---------------- */
+function joinForm(me){
+  me=me||{};
+  var opts=S.slots.filter(function(s){return !S.fixedSlot||s.id===S.fixedSlot;}).map(function(s){var full=(S.occupancy[s.id]||0)>=S.seats;
+    return '<option value="'+s.id+'"'+(me.slot===s.id?' selected':'')+'>'+s.day+' '+s.part+' · '+s.from+' עד '+s.to+(full?' · מלא':'')+'</option>';}).join('');
+  return '<div class="field"><label>שם מלא</label><input id="fName" maxlength="40" value="'+esc(me.name||S.label||'')+'"></div>'+
+    '<div class="field"><label>טלפון</label><input id="fPhone" inputmode="tel" maxlength="20" value="'+esc(me.phone||'')+'"></div>'+
+    '<div class="field"><label>'+(S.fixedSlot?'השיעור הקבוע שלך':'שיעור קבוע מבוקש')+'</label><select id="fSlot"'+(S.fixedSlot?' disabled':'')+'>'+opts+'</select></div>'+
+    '<div class="field"><label>הערה (לא חובה)</label><input id="fNote" maxlength="140" value="'+esc(me.note||'')+'"></div>'+
+    '<button class="btn pri" id="fSend" style="width:100%">שליחת בקשה</button>';
+}
+function studentView(){
+  if(S.state==='invalid')return '<div class="card big">הקישור הזה לא תקין. בקשו מהסטודיו קישור אישי חדש.</div>';
+  if(S.state==='removed')return '<div class="card big">החשבון הזה לא פעיל. לפרטים פנו לסטודיו.</div>';
+  if(S.state==='new')return '<div class="card"><h2>הרשמה לסטודיו</h2><div class="muted" style="margin-bottom:10px">ממלאים פרטים ובוחרים שיעור קבוע. ההרשמה נכנסת לתוקף אחרי אישור של הסטודיו.</div>'+joinForm()+'</div>';
+  if(S.state==='pending')return '<div class="card big"><h2>הבקשה נשלחה ✓</h2>ביקשת מקום קבוע ב<b>'+esc(slotName(S.me.slot))+'</b>. כשהבקשה תאושר, יופיעו כאן השיעורים שלך.</div><div class="card"><div class="muted">רוצה לשנות את הבקשה?</div>'+joinForm(S.me)+'</div>';
+  if(S.state==='rejected')return '<div class="notice">הבקשה הקודמת לא אושרה. אפשר לבחור שיעור אחר או לפנות לסטודיו.</div><div class="card">'+joinForm(S.me)+'</div>';
+  var avail=S.credits-S.pendingMk,W=S.weeks[week];
+  var wp='<div class="pills">'+S.weeks.map(function(w,i){return '<button data-w="'+i+'" class="'+(i===week?'on':'')+'">'+(i===0?'השבוע':i===1?'שבוע הבא':fmtD(w.wk))+'</button>';}).join('')+'</div>';
+  var rows=W.lessons.map(function(l){var s=SL[l.slot],tag='',act='';
+    if(l.cancelled)tag='<span class="tag off">בוטל</span>';
+    else if(l.mine){tag=l.absent?'<span class="tag off">סימנת שלא תגיע/י</span>':'<span class="tag mine">השיעור הקבוע שלך</span>'+(!l.absLate?'<div class="muted" style="margin-top:4px">אפשר לבטל '+l.absBy+'</div>':'');
+      if(!l.absLate)act=l.absent?'<button class="btn sm" data-abs="'+l.key+'" data-v="0">בכל זאת אגיע</button>':'<button class="btn sm" data-abs="'+l.key+'" data-v="1">לא אגיע · קבל/י השלמה</button>';else if(!l.absent&&!l.ended)act='<span class="muted">עבר מועד הביטול</span>';}
+    else if(l.mk==='ok')tag='<span class="tag ok">השלמה מאושרת ✓</span>';
+    else if(l.mk==='no')tag='<span class="tag off">השלמה לא אושרה</span>';
+    else if(l.mk==='pending'){tag='<span class="tag wait">ממתין לאישור</span>';if(!l.started)act='<button class="mini" data-unmk="'+l.key+'">ביטול בקשה</button>';}
+    else if(!l.started&&l.free>0&&avail>0)act='<button class="btn sm pri" data-mk="'+l.key+'">בקשת השלמה</button>';
+    return '<div class="card lesson'+(l.ended?' past':'')+(l.cancelled?' cancelled':'')+'"><div class="top"><div><div class="day">'+s.day+' '+s.part+'</div><div class="when">'+fmtD(l.date)+' · '+tm(s)+'</div></div>'+
+      '<div class="seats"><b>'+(l.cancelled?'—':l.free)+'</b><small>'+(l.cancelled?'':'מקומות פנויים')+'</small></div></div>'+
+      '<div class="row" style="margin-top:10px"><div>'+tag+'</div><div>'+(l.ended&&!tag?'<span class="muted">הסתיים</span>':act)+'</div></div></div>';}).join('');
+  $('who').innerHTML='שלום <b>'+esc(S.me.name)+'</b>';
+  return '<div class="credits"><div>יתרת שיעורי השלמה<div style="font-size:12px;opacity:.7">שיעור קבוע: '+esc(slotName(S.me.slot))+'</div></div><b>'+S.credits+'</b></div>'+
+    (S.pendingMk?'<div class="notice">'+S.pendingMk+' בקשות השלמה ממתינות לאישור</div>':'')+wp+rows+
+    '<p class="foot">לא יכול/ה להגיע? מסמנים "לא אגיע" ומקבלים שיעור השלמה. שיעורי בוקר אפשר לבטל עד 19:00 ביום הקודם, ושיעורי ערב עד 10:00 באותו יום. את ההשלמה מבקשים בשיעור שיש בו מקום פנוי, והיא נכנסת לתוקף אחרי אישור.</p>';
+}
+function bindStudent(){
+  var T=BOOT.token;
+  document.querySelectorAll('[data-w]').forEach(function(b){b.onclick=function(){week=+b.dataset.w;render();};});
+  var send=$('fSend');if(send)send.onclick=function(){var f={name:$('fName').value,phone:$('fPhone').value,slot:$('fSlot').value,note:$('fNote').value};
+    if(!f.name.trim()){toast('צריך שם');return;}call('register',[T,f],function(r){setState(r);toast('הבקשה נשלחה');});};
+  document.querySelectorAll('[data-abs]').forEach(function(b){b.onclick=function(){call('setAbsence',[T,b.dataset.abs,b.dataset.v==='1'],function(r){setState(r);toast(b.dataset.v==='1'?'נרשם. קיבלת השלמה':'עודכן');});};});
+  document.querySelectorAll('[data-mk]').forEach(function(b){b.onclick=function(){call('requestMakeup',[T,b.dataset.mk],function(r){setState(r);toast('הבקשה נשלחה לאישור');});};});
+  document.querySelectorAll('[data-unmk]').forEach(function(b){b.onclick=function(){call('cancelMakeup',[T,b.dataset.unmk],setState);};});
+}
+/* ---------------- admin ---------------- */
+function adminView(){
+  if(S.state==='denied')return '<div class="card big">קישור ניהול לא תקין.</div>';
+  $('who').innerHTML='<b>מצב ניהול</b>';
+  var n=S.pendingJoin.length+S.pendingMk.length;if(!tab)tab=n?'req':'week';
+  var tabs='<div class="pills">'+[['req','בקשות'+(n?'<span class="n">'+n+'</span>':'')],['week','לוח שבועי'],['stu','תלמידים'],['inv','קישורים']].map(function(t){return '<button data-tab="'+t[0]+'" class="'+(tab===t[0]?'on':'')+'">'+t[1]+'</button>';}).join('')+'</div>';
+  var body='';
+  if(tab==='req'){
+    body='<div class="card"><h2>הרשמות חדשות</h2>'+(S.pendingJoin.length?S.pendingJoin.map(function(r){return '<div class="req"><div class="row"><b>'+esc(r.name)+'</b><span class="muted">'+esc(r.phone)+'</span></div>'+
+      '<div class="muted">מבקש/ת: '+esc(slotName(r.slot))+' · תפוסה '+r.taken+'/'+S.seats+(r.note?' · '+esc(r.note):'')+'</div>'+
+      '<div class="acts"><button class="btn ok" data-a="approve" data-t="'+r.token+'">אישור</button><button class="btn" data-a="reject" data-t="'+r.token+'">דחייה</button></div></div>';}).join(''):'<div class="empty">אין הרשמות שמחכות</div>')+'</div>'+
+      '<div class="card"><h2>בקשות השלמה</h2>'+(S.pendingMk.length?S.pendingMk.map(function(m){return '<div class="req"><div class="row"><b>'+esc(m.name)+'</b><span class="muted">יתרה: '+m.credits+'</span></div>'+
+      '<div class="muted">'+esc(slotName(m.slot))+' · '+fmtD(m.date)+' · '+m.free+' מקומות פנויים</div>'+
+      '<div class="acts"><button class="btn ok" data-a="mkok" data-t="'+m.token+'" data-k="'+m.key+'"'+(m.free>0&&m.credits>0?'':' disabled')+'>אישור</button><button class="btn" data-a="mkno" data-t="'+m.token+'" data-k="'+m.key+'">דחייה</button></div></div>';}).join(''):'<div class="empty">אין בקשות השלמה</div>')+'</div>';
+  }else if(tab==='week'){
+    body='<div class="pills">'+[0,1,2,3].map(function(i){return '<button data-ww="'+i+'" class="'+(i===week?'on':'')+'">'+(i===0?'השבוע':i===1?'שבוע הבא':'+'+i)+'</button>';}).join('')+'</div>'+
+      S.week.map(function(l){var s=SL[l.slot];var li=l.regs.map(function(r){return '<div class="li"><span class="'+(r.absent?'x':'')+'">'+esc(r.name)+'</span><span>'+(r.absent?'<span class="tag off">לא מגיע/ה</span> ':'')+
+        '<button class="mini" data-a="absence" data-t="'+r.token+'" data-k="'+l.key+'" data-on="'+(r.absent?0:1)+'">'+(r.absent?'החזר':'סמן חיסור')+'</button></span></div>';}).join('')+
+        l.mk.map(function(m){return '<div class="li"><span>'+esc(m.name)+'</span><span><span class="tag ok">השלמה</span> <button class="mini" data-a="mkno" data-t="'+m.token+'" data-k="'+l.key+'">הסר</button></span></div>';}).join('');
+        var coming=l.regs.filter(function(r){return !r.absent;}).length+l.mk.length;
+        return '<div class="card lesson'+(l.ended?' past':'')+(l.cancelled?' cancelled':'')+'"><div class="top"><div><div class="day">'+s.day+' '+s.part+'</div><div class="when">'+fmtD(l.date)+' · '+tm(s)+'</div></div>'+
+          '<div class="seats"><b>'+(l.cancelled?'—':l.free)+'</b><small>'+(l.cancelled?'בוטל':'פנויים')+'</small></div></div>'+
+          '<div class="muted" style="margin:6px 0 2px">'+coming+' מגיעים מתוך '+S.seats+'</div><div>'+(li||'<div class="empty">אין תלמידים</div>')+'</div>'+
+          '<div class="row" style="margin-top:8px"><span></span><button class="btn sm" data-a="cancel" data-k="'+l.key+'">'+(l.cancelled?'החזר שיעור':'בטל שיעור')+'</button></div></div>';}).join('');
+  }else if(tab==='stu'){
+    body='<div class="card"><h2>תלמידים ('+S.students.length+')</h2>'+(S.students.length?S.students.map(function(s){
+      return '<div class="li"><div style="flex:1;min-width:140px"><b>'+esc(s.name)+'</b><div class="muted">'+esc(s.phone)+' · יתרה '+s.credits+'</div></div>'+
+      '<select class="mini" data-slot="'+s.token+'">'+S.slots.map(function(x){return '<option value="'+x.id+'"'+(x.id===s.slot?' selected':'')+'>'+x.day+' '+x.part+'</option>';}).join('')+'</select>'+
+      '<button class="mini" data-a="bonus" data-t="'+s.token+'" data-d="1">+1</button><button class="mini" data-a="bonus" data-t="'+s.token+'" data-d="-1">−1</button><button class="mini" data-rm="'+s.token+'">הסר</button></div>';}).join(''):'<div class="empty">עוד אין תלמידים</div>')+'</div>';
+  }else{
+    body='<div class="card"><h2>קישור הרשמה אישי</h2><div class="muted" style="margin-bottom:8px">כל תלמיד/ה מקבל/ת קישור משלו/ה. רק מי שיש לו קישור יכול להירשם.</div>'+
+      (S.hasUrl?'':'<div class="notice">צריך קודם לפרסם את האפליקציה (Deploy) כדי שיהיו קישורים.</div>')+
+      '<div class="field"><label>שם התלמיד/ה (לזיהוי שלך)</label><input id="invLabel" maxlength="40"></div><div class="field"><label>שיעור קבוע</label><select id="invSlot"><option value="">התלמיד/ה בוחר/ת</option>'+S.slots.map(function(x){return '<option value="'+x.id+'">'+x.day+' '+x.part+' · '+x.from+'</option>';}).join('')+'</select></div><button class="btn pri" id="invNew" style="width:100%">יצירת קישור</button></div>'+
+      '<div class="card"><h2>קישורים אחרונים</h2>'+(S.invites.length?S.invites.map(function(i){var wa='https://wa.me/?text='+encodeURIComponent('היי'+(i.label?' '+i.label:'')+', זה הקישור האישי שלך להרשמה'+(i.slot?' לשיעור הקבוע ב'+slotName(i.slot):' לשיעורים')+' בסטודיו DNG: '+i.link);
+        return '<div class="req"><div class="row"><b>'+esc(i.label||'ללא שם')+(i.slot?' <span class="tag mine">'+esc(slotName(i.slot))+'</span>':'')+'</b><span class="tag'+(i.used?' ok':'')+'">'+(i.used?'בשימוש':'לא נוצל')+'</span></div>'+
+        (i.link?'<input class="link" readonly value="'+esc(i.link)+'" onclick="this.select()">':'')+
+        '<div class="acts">'+(i.link?'<a class="btn ok" style="text-align:center;text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה בוואטסאפ</a>':'<span></span>')+'<button class="btn" data-a="revoke" data-t="'+i.token+'">ביטול קישור</button></div></div>';}).join(''):'<div class="empty">עוד לא נוצרו קישורים</div>')+'</div>';
+  }
+  return tabs+body;
+}
+function bindAdmin(){
+  var K=BOOT.admin;
+  function act(a,p){p=p||{};p.week=week;call('adminAction',[K,a,p],setState);}
+  document.querySelectorAll('[data-tab]').forEach(function(b){b.onclick=function(){tab=b.dataset.tab;render();};});
+  document.querySelectorAll('[data-ww]').forEach(function(b){b.onclick=function(){week=+b.dataset.ww;call('adminState',[K,week],setState);};});
+  document.querySelectorAll('[data-a]').forEach(function(b){b.onclick=function(){act(b.dataset.a,{token:b.dataset.t,key:b.dataset.k,on:b.dataset.on==='1',delta:+b.dataset.d||0});};});
+  document.querySelectorAll('[data-slot]').forEach(function(s){s.onchange=function(){act('slot',{token:s.dataset.slot,slot:s.value});};});
+  document.querySelectorAll('[data-rm]').forEach(function(b){b.onclick=function(){if(b.dataset.c){act('remove',{token:b.dataset.rm});}else{b.dataset.c='1';b.textContent='בטוח?';setTimeout(function(){if(b.isConnected){delete b.dataset.c;b.textContent='הסר';}},3000);}};});
+  var nv=$('invNew');if(nv)nv.onclick=function(){act('invite',{label:$('invLabel').value,slot:$('invSlot').value});toast('נוצר קישור');};
+}
+/* boot */
+if(ADMIN)call('adminState',[BOOT.admin,0],setState);
+else if(BOOT.token)call('studentState',[BOOT.token],setState);
+else{S={state:'invalid'};render();}
+</script>
+</body>
+</html>
