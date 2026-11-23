@@ -21,7 +21,12 @@ const SHEETS = {
 };
 
 /* ===================== spreadsheet (bound or standalone) ===================== */
+let SS_ = null;
 function ss_() {
+  if (SS_) return SS_;
+  return SS_ = openSs_();
+}
+function openSs_() {
   let s = null;
   try { s = SpreadsheetApp.getActive(); } catch (e) {}
   if (s) return s;
@@ -51,6 +56,7 @@ function setup() {
   if (!st.NOTIFY_EMAIL) setSetting_('NOTIFY_EMAIL', Session.getEffectiveUser().getEmail());
   const def = ss.getSheetByName('Sheet1') || ss.getSheetByName('גיליון1');
   if (def && ss.getSheets().length > 1 && def.getLastRow() === 0) ss.deleteSheet(def);
+  bumpCache_();
   const key = settings_().ADMIN_KEY;
   console.log('הגיליון: ' + ss.getUrl());
   const url = ScriptApp.getService().getUrl();
@@ -66,8 +72,11 @@ function onOpen() {
   try { SpreadsheetApp.getUi().createMenu('סטודיו DNG')
     .addItem('הגדרה ראשונית', 'setupUi')
     .addItem('הצג קישור ניהול', 'showAdminLink')
+    .addItem('רענון נתונים באפליקציה (אחרי עריכה ידנית)', 'clearCache')
     .addToUi(); } catch (e) {}
 }
+/** כשהסקריפט מוצמד לגיליון: עריכה ידנית מרעננת את המטמון מיד. */
+function onEdit() { bumpCache_(); }
 function setupUi() {
   setup();
   SpreadsheetApp.getUi().alert('ההגדרה הושלמה. עכשיו צריך לפרסם: Deploy ← New deployment ← Web app. אחר כך: סטודיו DNG ← הצג קישור ניהול.');
@@ -84,7 +93,11 @@ function doGet(e) {
   let t;
   try { t = HtmlService.createTemplateFromFile('Index'); }
   catch (err) { t = HtmlService.createTemplateFromFile('Index.html'); }
-  t.boot = JSON.stringify({ token: clean_(e.parameter.t), admin: clean_(e.parameter.admin) });
+  const token = clean_(e.parameter.t), admin = clean_(e.parameter.admin);
+  // המצב הראשון נשלח יחד עם הדף, כדי שלא יהיה עוד סיבוב לשרת אחרי שהדף נטען.
+  let state = null;
+  try { state = admin ? adminState(admin, 0) : token ? studentState(token) : null; } catch (err) { console.log('boot state failed: ' + err); }
+  t.boot = JSON.stringify({ token, admin, state }).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   return t.evaluate()
     .setTitle('שיעורים – סטודיו DNG')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -92,7 +105,8 @@ function doGet(e) {
 }
 
 /* ===================== sheet helpers ===================== */
-function sh_(n) { return ss_().getSheetByName(n); }
+const SH_ = {};
+function sh_(n) { return SH_[n] || (SH_[n] = ss_().getSheetByName(n)); }
 function rows_(n) {
   const s = sh_(n); if (!s) throw new Error('חסר גיליון ' + n + ' – צריך להריץ setup');
   const v = s.getDataRange().getValues(), h = SHEETS[n], out = [];
@@ -105,19 +119,78 @@ function rows_(n) {
   return out;
 }
 function norm_(x) { return x instanceof Date ? Utilities.formatDate(x, TZ, 'yyyy-MM-dd') : String(x == null ? '' : x); }
+function rowVals_(n, obj) { return SHEETS[n].map(k => obj[k] == null ? '' : String(obj[k])); }
 function append_(n, obj) {
   const s = sh_(n), h = SHEETS[n], r = s.getLastRow() + 1;
-  s.getRange(r, 1, 1, h.length).setNumberFormat('@').setValues([h.map(k => obj[k] == null ? '' : String(obj[k]))]);
+  s.getRange(r, 1, 1, h.length).setNumberFormat('@').setValues([rowVals_(n, obj)]);
+  return r;
 }
-function update_(n, row, obj) {
-  const s = sh_(n), h = SHEETS[n];
-  h.forEach((k, j) => { if (k in obj) s.getRange(row, j + 1).setNumberFormat('@').setValue(String(obj[k])); });
+/** כותב את כל השורה בקריאה אחת (במקום תא-תא). rec היא השורה המלאה כפי שנקראה. */
+function update_(n, rec, obj) {
+  Object.keys(obj).forEach(k => { rec[k] = String(obj[k]); });
+  sh_(n).getRange(rec._row, 1, 1, SHEETS[n].length).setNumberFormat('@').setValues([rowVals_(n, rec)]);
 }
 function settings_() { const o = {}; rows_('Settings').forEach(r => o[r.key] = r.value); return o; }
 function setSetting_(k, v) {
   const r = rows_('Settings').find(x => x.key === k);
-  if (r) update_('Settings', r._row, { value: v }); else append_('Settings', { key: k, value: v });
+  if (r) update_('Settings', r, { value: v }); else append_('Settings', { key: k, value: v });
+  bumpCache_();
 }
+
+/* ===================== data in memory + cache =====================
+ * כל קריאה לשרת קראה את כל 6 הגיליונות מחדש. עכשיו:
+ *  - קריאה בלבד (פתיחת הדף, מעבר שבוע) מגיעה מ-CacheService, אם יש.
+ *  - פעולה שכותבת קוראת תמיד מהגיליון עצמו (בתוך הנעילה), מעדכנת גם את הזיכרון,
+ *    ושומרת את הנתונים המעודכנים במטמון, כך שהתשובה לא קוראת שוב את הגיליון.
+ *  - שינוי ידני בגיליון מופיע באפליקציה תוך CACHE_TTL שניות לכל היותר
+ *    (או מיד, עם תפריט "סטודיו DNG ← רענון נתונים" / הפונקציה clearCache).
+ */
+const CACHE_TTL = 300, CACHE_CHUNK = 90000, LIST_SHEET = { stu: 'Students', inv: 'Invites', abs: 'Absences', mk: 'Makeups', can: 'Cancelled' };
+function cacheVer_(c) { return c.get('dver') || '0'; }
+function cacheGet_() {
+  try {
+    const c = CacheService.getScriptCache(), ver = cacheVer_(c), n = +c.get('dn_' + ver);
+    if (!n) return null;
+    const keys = []; for (let i = 0; i < n; i++) keys.push('dc_' + ver + '_' + i);
+    const got = c.getAll(keys); let json = '';
+    for (let i = 0; i < n; i++) { if (got[keys[i]] == null) return null; json += got[keys[i]]; }
+    return JSON.parse(json);
+  } catch (e) { console.log('cache read failed: ' + e); return null; }
+}
+function cachePut_(D, ver) {
+  try {
+    const c = CacheService.getScriptCache();
+    if (ver != null && cacheVer_(c) !== ver) return; // מישהו כתב בינתיים – לא לדרוס בנתונים ישנים
+    ver = cacheVer_(c);
+    const json = JSON.stringify(D), o = {}; let n = 0;
+    for (let i = 0; i < json.length; i += CACHE_CHUNK) o['dc_' + ver + '_' + (n++)] = json.slice(i, i + CACHE_CHUNK);
+    o['dn_' + ver] = String(n);
+    c.putAll(o, CACHE_TTL);
+  } catch (e) { console.log('cache write failed: ' + e); }
+}
+function bumpCache_() {
+  try { const c = CacheService.getScriptCache(); c.put('dver', String(Date.now()) + Math.floor(Math.random() * 1000), 21600); }
+  catch (e) { console.log('cache bump failed: ' + e); }
+}
+/** להריץ מהעורך (או מהתפריט) אחרי עריכה ידנית בגיליון, כדי שהאפליקציה תראה אותה מיד. */
+function clearCache() { bumpCache_(); return 'ok'; }
+
+/** הוספת שורה גם לגיליון וגם לנתונים שבזיכרון. */
+function addRow_(D, list, obj) {
+  const n = LIST_SHEET[list], rec = { _row: append_(n, obj) };
+  SHEETS[n].forEach(k => { rec[k] = obj[k] == null ? '' : String(obj[k]); });
+  D[list].push(rec); D._dirty = true;
+  return rec;
+}
+function setRow_(D, list, rec, obj) { update_(LIST_SHEET[list], rec, obj); D._dirty = true; }
+function delRow_(D, list, rec) {
+  sh_(LIST_SHEET[list]).deleteRow(rec._row);
+  D[list] = D[list].filter(r => r !== rec);
+  D[list].forEach(r => { if (r._row > rec._row) r._row--; });
+  D._dirty = true;
+}
+/** אחרי כתיבה: גרסה חדשה במטמון, עם הנתונים המעודכנים. */
+function saveCache_(D) { if (!D._dirty) return; delete D._dirty; bumpCache_(); cachePut_(D, null); }
 function clean_(s) { return String(s || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 64); }
 function randomToken_(n) {
   const a = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; let s = '';
@@ -130,7 +203,12 @@ function withLock_(fn) {
 }
 
 /* ===================== dates (Israel) ===================== */
+let NOW_ = null, NOW_AT_ = 0;
 function ilNow_() {
+  if (NOW_ && Date.now() - NOW_AT_ < 20000) return NOW_;
+  NOW_AT_ = Date.now(); return NOW_ = ilNow0_();
+}
+function ilNow0_() {
   const p = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH mm u').split(' ');
   return { date: p[0], min: (+p[1]) * 60 + (+p[2]), dow: (+p[3]) % 7 };
 }
@@ -147,27 +225,37 @@ function slotName_(id) { const s = slotById_(id); return s ? s.day + ' ' + s.par
 function fmtD_(iso) { const p = iso.split('-'); return (+p[2]) + '.' + (+p[1]); }
 
 /* ===================== domain ===================== */
-function load_() {
-  return {
+/** fresh=true: לקרוא מהגיליון (לפני כתיבה). אחרת: מהמטמון אם יש. */
+function load_(fresh) {
+  let ver = null;
+  if (!fresh) {
+    const hit = cacheGet_(); if (hit) return hit;
+    try { ver = cacheVer_(CacheService.getScriptCache()); } catch (e) {}
+  }
+  const D = {
     stu: rows_('Students'), inv: rows_('Invites'), abs: rows_('Absences'), mk: rows_('Makeups'),
-    cancel: rows_('Cancelled').map(r => r.lessonKey), set: settings_(),
+    can: rows_('Cancelled'), set: settings_(),
   };
+  if (fresh) bumpCache_();
+  cachePut_(D, fresh ? null : ver);
+  return D;
 }
+function cancelled_(D, key) { return D.can.some(r => r.lessonKey === key); }
 function seats_(D) { return +(D.set.SEATS || 8); }
 function seat_(D, key) {
   const L = lesson_(key);
   const regs = D.stu.filter(s => s.status === 'approved' && s.slot === L.s.id && s.since <= L.date);
   const absent = regs.filter(s => D.abs.some(a => a.token === s.token && a.lessonKey === key));
   const mkOk = D.mk.filter(m => m.lessonKey === key && m.status === 'ok');
-  const cancelled = D.cancel.indexOf(key) >= 0;
+  const cancelled = cancelled_(D, key);
   return { regs, absent, mkOk, cancelled, free: cancelled ? 0 : Math.max(0, seats_(D) - regs.length + absent.length - mkOk.length) };
 }
 function credits_(D, token) {
   const st = D.stu.find(s => s.token === token); if (!st || st.status !== 'approved') return 0;
   let c = +st.bonus || 0;
   c += D.abs.filter(a => a.token === token).length;
-  D.cancel.forEach(k => {
-    const L = lesson_(k);
+  D.can.forEach(r => {
+    const k = r.lessonKey, L = lesson_(k);
     if (L.s && L.s.id === st.slot && st.since <= L.date && !D.abs.some(a => a.token === token && a.lessonKey === k)) c += 1;
   });
   c -= D.mk.filter(m => m.token === token && m.status === 'ok').length;
@@ -183,8 +271,8 @@ function notify_(D, subject, body) {
 }
 
 /* ===================== student API ===================== */
-function studentState(token) {
-  token = clean_(token); const D = load_();
+function studentState(token) { return studentState_(load_(), clean_(token)); }
+function studentState_(D, token) {
   if (!token || !D.inv.some(i => i.token === token)) return { state: 'invalid' };
   const st = D.stu.find(s => s.token === token);
   const occupancy = {}; SLOTS.forEach(s => occupancy[s.id] = D.stu.filter(x => x.status === 'approved' && x.slot === s.id).length);
@@ -209,7 +297,7 @@ function studentState(token) {
 function register(token, f) {
   token = clean_(token);
   return withLock_(() => {
-    const D = load_();
+    const D = load_(true);
     const inv = D.inv.find(i => i.token === token);
     if (!inv) throw new Error('קישור לא תקין');
     if (slotById_(inv.slot)) f.slot = inv.slot;
@@ -219,29 +307,31 @@ function register(token, f) {
     const st = D.stu.find(s => s.token === token);
     if (st && (st.status === 'approved' || st.status === 'removed')) throw new Error('כבר רשום/ה');
     const obj = { token, name, phone, slot, status: 'pending', requestedAt: Date.now(), note };
-    if (st) update_('Students', st._row, obj); else append_('Students', Object.assign({ since: '', bonus: '0' }, obj));
+    if (st) setRow_(D, 'stu', st, obj); else addRow_(D, 'stu', Object.assign({ since: '', bonus: '0' }, obj));
+    saveCache_(D);
     notify_(D, 'בקשת הרשמה: ' + name, name + ' (' + phone + ') מבקש/ת מקום קבוע ב' + slotName_(slot) + (note ? '\nהערה: ' + note : ''));
-    return studentState(token);
+    return studentState_(D, token);
   });
 }
 function setAbsence(token, key, on) {
   token = clean_(token);
   return withLock_(() => {
-    const D = load_(), st = D.stu.find(s => s.token === token && s.status === 'approved');
+    const D = load_(true), st = D.stu.find(s => s.token === token && s.status === 'approved');
     if (!st) throw new Error('אין הרשאה');
     const L = lesson_(key);
     if (!L.s || L.s.id !== st.slot || st.since > L.date) throw new Error('זה לא השיעור הקבוע שלך');
     if (absLate_(key)) throw new Error('עבר מועד הביטול (' + absDeadline_(key).txt + '). לביטול מאוחר פנו לסטודיו');
     const ex = D.abs.find(a => a.token === token && a.lessonKey === key);
-    if (on && !ex) append_('Absences', { token, lessonKey: key, createdAt: Date.now() });
-    if (!on && ex) sh_('Absences').deleteRow(ex._row);
-    return studentState(token);
+    if (on && !ex) addRow_(D, 'abs', { token, lessonKey: key, createdAt: Date.now() });
+    if (!on && ex) delRow_(D, 'abs', ex);
+    saveCache_(D);
+    return studentState_(D, token);
   });
 }
 function requestMakeup(token, key) {
   token = clean_(token);
   return withLock_(() => {
-    const D = load_(), st = D.stu.find(s => s.token === token && s.status === 'approved');
+    const D = load_(true), st = D.stu.find(s => s.token === token && s.status === 'approved');
     if (!st) throw new Error('אין הרשאה');
     const L = lesson_(key); if (!L.s) throw new Error('שיעור לא קיים');
     if (started_(key)) throw new Error('השיעור כבר התחיל');
@@ -249,24 +339,27 @@ function requestMakeup(token, key) {
     if (D.mk.some(m => m.token === token && m.lessonKey === key)) throw new Error('כבר ביקשת את השיעור הזה');
     if (seat_(D, key).free <= 0) throw new Error('אין מקום פנוי בשיעור');
     if (credits_(D, token) - pendingMkCount_(D, token) <= 0) throw new Error('אין יתרת השלמות');
-    append_('Makeups', { token, lessonKey: key, status: 'pending', createdAt: Date.now(), decidedAt: '' });
+    addRow_(D, 'mk', { token, lessonKey: key, status: 'pending', createdAt: Date.now(), decidedAt: '' });
+    saveCache_(D);
     notify_(D, 'בקשת השלמה: ' + st.name, st.name + ' מבקש/ת השלמה ב' + slotName_(L.s.id) + ' ' + fmtD_(L.date));
-    return studentState(token);
+    return studentState_(D, token);
   });
 }
 function cancelMakeup(token, key) {
   token = clean_(token);
   return withLock_(() => {
-    const D = load_(), m = D.mk.find(x => x.token === token && x.lessonKey === key && x.status === 'pending');
-    if (m) sh_('Makeups').deleteRow(m._row);
-    return studentState(token);
+    const D = load_(true), m = D.mk.find(x => x.token === token && x.lessonKey === key && x.status === 'pending');
+    if (m) delRow_(D, 'mk', m);
+    saveCache_(D);
+    return studentState_(D, token);
   });
 }
 
 /* ===================== admin API ===================== */
 function isAdmin_(D, key) { return !!key && clean_(key) === D.set.ADMIN_KEY; }
-function adminState(adminKey, weekOff) {
-  const D = load_(); if (!isAdmin_(D, adminKey)) return { state: 'denied' };
+function adminState(adminKey, weekOff) { return adminState_(load_(), adminKey, weekOff); }
+function adminState_(D, adminKey, weekOff) {
+  if (!isAdmin_(D, adminKey)) return { state: 'denied' };
   const byTok = {}; D.stu.forEach(s => byTok[s.token] = s);
   const nm = t => (byTok[t] && byTok[t].name) || 'ללא שם';
   const url = ScriptApp.getService().getUrl() || '';
@@ -289,29 +382,30 @@ function adminState(adminKey, weekOff) {
 function adminAction(adminKey, act, p) {
   p = p || {};
   return withLock_(() => {
-    const D = load_(); if (!isAdmin_(D, adminKey)) throw new Error('אין הרשאה');
+    const D = load_(true); if (!isAdmin_(D, adminKey)) throw new Error('אין הרשאה');
     const st = p.token ? D.stu.find(s => s.token === clean_(p.token)) : null;
-    if (act === 'approve' && st) update_('Students', st._row, { status: 'approved', since: weekStart_(0), bonus: st.bonus || '0' });
-    else if (act === 'reject' && st) update_('Students', st._row, { status: 'rejected' });
+    if (act === 'approve' && st) setRow_(D, 'stu', st, { status: 'approved', since: weekStart_(0), bonus: st.bonus || '0' });
+    else if (act === 'reject' && st) setRow_(D, 'stu', st, { status: 'rejected' });
     else if ((act === 'mkok' || act === 'mkno') && p.key) {
       const m = D.mk.find(x => x.token === clean_(p.token) && x.lessonKey === p.key);
-      if (m) update_('Makeups', m._row, { status: act === 'mkok' ? 'ok' : 'no', decidedAt: Date.now() });
+      if (m) setRow_(D, 'mk', m, { status: act === 'mkok' ? 'ok' : 'no', decidedAt: Date.now() });
     }
     else if (act === 'absence' && st && p.key) {
       const ex = D.abs.find(a => a.token === st.token && a.lessonKey === p.key);
-      if (p.on && !ex) append_('Absences', { token: st.token, lessonKey: p.key, createdAt: Date.now() });
-      if (!p.on && ex) sh_('Absences').deleteRow(ex._row);
+      if (p.on && !ex) addRow_(D, 'abs', { token: st.token, lessonKey: p.key, createdAt: Date.now() });
+      if (!p.on && ex) delRow_(D, 'abs', ex);
     }
     else if (act === 'cancel' && p.key) {
-      const r = rows_('Cancelled').find(x => x.lessonKey === p.key);
-      if (r) sh_('Cancelled').deleteRow(r._row); else append_('Cancelled', { lessonKey: p.key, createdAt: Date.now() });
+      const r = D.can.find(x => x.lessonKey === p.key);
+      if (r) delRow_(D, 'can', r); else addRow_(D, 'can', { lessonKey: p.key, createdAt: Date.now() });
     }
-    else if (act === 'slot' && st && slotById_(p.slot)) update_('Students', st._row, { slot: p.slot, since: weekStart_(0) });
-    else if (act === 'bonus' && st) update_('Students', st._row, { bonus: (+st.bonus || 0) + (+p.delta || 0) });
-    else if (act === 'remove' && st) update_('Students', st._row, { status: 'removed' });
-    else if (act === 'invite') append_('Invites', { token: randomToken_(16), label: String(p.label || '').slice(0, 40), createdAt: Date.now(), slot: slotById_(p.slot) ? p.slot : '' });
-    else if (act === 'revoke' && p.token) { const r = D.inv.find(i => i.token === clean_(p.token)); if (r) sh_('Invites').deleteRow(r._row); }
-    return adminState(adminKey, p.week || 0);
+    else if (act === 'slot' && st && slotById_(p.slot)) setRow_(D, 'stu', st, { slot: p.slot, since: weekStart_(0) });
+    else if (act === 'bonus' && st) setRow_(D, 'stu', st, { bonus: (+st.bonus || 0) + (+p.delta || 0) });
+    else if (act === 'remove' && st) setRow_(D, 'stu', st, { status: 'removed' });
+    else if (act === 'invite') addRow_(D, 'inv', { token: randomToken_(16), label: String(p.label || '').slice(0, 40), createdAt: Date.now(), slot: slotById_(p.slot) ? p.slot : '' });
+    else if (act === 'revoke' && p.token) { const r = D.inv.find(i => i.token === clean_(p.token)); if (r) delRow_(D, 'inv', r); }
+    saveCache_(D);
+    return adminState_(D, adminKey, p.week || 0);
   });
 }
 
