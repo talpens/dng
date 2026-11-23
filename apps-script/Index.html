@@ -4,7 +4,9 @@
 <base target="_top">
 <meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Hebrew:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- הגופנים נטענים בלי לעכב את הצגת הדף (עד שהם מגיעים מוצג גופן המערכת) -->
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Hebrew:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
 :root{--bg:#dfe5d6;--card:#e9ede2;--card2:#f2f4ee;--ink:#161616;--mid:#6d7268;--hair:rgba(22,22,22,.10);--pill:#161616;--pillink:#e9ede2;--accent:#e8742b;--ok:#3f7a4a;--mono:'IBM Plex Mono',ui-monospace,monospace}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -172,8 +174,9 @@ function bindAdmin(){
   document.querySelectorAll('[data-rm]').forEach(function(b){b.onclick=function(){if(b.dataset.c){act('remove',{token:b.dataset.rm});}else{b.dataset.c='1';b.textContent='בטוח?';setTimeout(function(){if(b.isConnected){delete b.dataset.c;b.textContent='הסר';}},3000);}};});
   var nv=$('invNew');if(nv)nv.onclick=function(){act('invite',{label:$('invLabel').value,slot:$('invSlot').value});toast('נוצר קישור');};
 }
-/* boot */
-if(ADMIN)call('adminState',[BOOT.admin,0],setState);
+/* boot: the server already sent the first state with the page */
+if(BOOT.state)setState(BOOT.state);
+else if(ADMIN)call('adminState',[BOOT.admin,0],setState);
 else if(BOOT.token)call('studentState',[BOOT.token],setState);
 else{S={state:'invalid'};render();}
 </script>
