@@ -1,0 +1,3 @@
+# The public site is only the app shell in site/. The Apps Script source in apps-script/ is not served.
+[build]
+  publish = "site"

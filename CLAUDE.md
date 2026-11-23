@@ -12,16 +12,17 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
 1. **Backend + UI: Google Apps Script web app**, bound to Tal's Google account.
    - Script ID: `10uAfaJyEDQHPrKiTuhn-Uv-zFVOBMbl6MLIX9-svPDmtpQzktewfajdC`
    - Web app (deployment) URL: `https://script.google.com/macros/s/AKfycbyMML5WkOLAWTvZxXvFuySfhXMS4FM2mXqsxD_Tep1jxbah-0aSBfWJ0JBiauYgueZZNw/exec`
-   - Files: `Code.gs` (server: setup, doGet, studentState, register, setAbsence, requestMakeup,
+   - Files in `apps-script/`: `קוד.js` (server, shown as Code.gs in the editor: setup, doGet, studentState, register, setAbsence, requestMakeup,
      cancelMakeup, adminState, adminAction) and `Index.html` (whole client UI, vanilla JS, `google.script.run`).
    - Data lives in a Google Sheet ("שיעורים – סטודיו DNG") with tabs: Students, Invites, Absences,
      Makeups, Cancelled, Settings. All cells are text. Settings holds ADMIN_KEY, SEATS (8),
      NOTIFY_EMAIL, APP_URL.
-   - The Apps Script source is NOT in this repo yet. Get it with clasp (see "First-time setup").
-2. **App shell: this repo** (static, no build). `index.html` full-screens the web app in an iframe,
+   - Source lives in `apps-script/` (pulled with clasp). The Sheet ID is kept in Script Properties (SHEET_ID), not in code.
+2. **App shell: `site/`** (static, no build). `site/index.html` full-screens the web app in an iframe,
    plus `manifest.webmanifest` and icons so it installs to the phone home screen.
    - Live: https://studio-dng.netlify.app (Netlify, auto-deploys every push to `main`).
-   - Also served (legacy) at https://talpens.github.io/dng via GitHub Pages.
+   - Netlify publishes only `site/` (`netlify.toml`). The root `index.html` is a redirect for the legacy
+     GitHub Pages URL (https://talpens.github.io/dng) to Netlify, keeping ?t= / ?admin=.
    - `index.html` reads `?t=TOKEN` (student) or `?admin=KEY` (admin), remembers it in localStorage,
      and loads `<WEB_APP_URL>?t=...` / `?admin=...` in the iframe. Requires
      `XFrameOptionsMode.ALLOWALL` in doGet (already set).
@@ -43,7 +44,7 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
 - Never commit the admin key, the Sheet ID, student names/phones, or tokens. This repo is public.
 - The admin link is `https://studio-dng.netlify.app/?admin=<ADMIN_KEY>`; the key is in the Settings tab.
 
-## First-time setup (do this once, on Tal's Windows machine)
+## First-time setup (done 2026-11-23; kept for reference / a new machine)
 1. Tal turns on the Apps Script API: https://script.google.com/home/usersettings → "Google Apps Script API" → On.
 2. `npm install -g @google/clasp` then `clasp login` (Tal approves in the browser).
 3. From the repo root: `mkdir apps-script; cd apps-script; clasp clone 10uAfaJyEDQHPrKiTuhn-Uv-zFVOBMbl6MLIX9-svPDmtpQzktewfajdC`
