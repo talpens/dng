@@ -1,3 +1,10 @@
-# The public site is only the app shell in site/. The Apps Script source in apps-script/ is not served.
+# The site moved back to GitHub Pages (https://talpens.github.io/dng/).
+# Netlify now only forwards old links there; the query string (?t= / ?admin=) is kept.
 [build]
   publish = "site"
+
+[[redirects]]
+  from = "/*"
+  to = "https://talpens.github.io/dng/:splat"
+  status = 301
+  force = true
