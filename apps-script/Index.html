@@ -191,7 +191,7 @@ function wsPublicView(){
   $('who').innerHTML='';
   if(S.state==='wsinvalid')return '<div class="card big">הסדנה הזו לא נמצאה. אולי הקישור השתנה – פנו לסטודיו.</div>';
   var w=S.ws,body;
-  if(S.done==='ok')body='<div class="card big"><h2>נרשמת לסדנה ✓</h2>נתראה ב'+wsWhen(w)+'.<div class="muted" style="margin-top:6px">לביטול או לשאלות פנו לסטודיו.</div></div>';
+  if(S.done==='ok'||S.done==='pending'&&S.payUrl)body='<div class="card big"><h2>'+(S.done==='ok'?'נרשמת לסדנה ✓':'הבקשה נשלחה ✓')+'</h2>'+(S.done==='ok'?'נתראה ב'+wsWhen(w)+'.':'הסטודיו יאשר את ההרשמה.')+(S.payUrl?'<div class="muted" style="margin:8px 0">המקום שלך שמור. להשלמת ההרשמה יש לשלם.</div><a class="btn pri" style="display:block;text-align:center;text-decoration:none" target="_blank" rel="noopener" href="'+esc(S.payUrl)+'">לתשלום מאובטח'+(w.price?' · '+esc(w.price):'')+'</a>':'')+'<div class="muted" style="margin-top:6px">לביטול או לשאלות פנו לסטודיו.</div></div>';
   else if(S.done==='pending')body='<div class="card big"><h2>הבקשה נשלחה ✓</h2>הסטודיו יאשר את ההרשמה ויחזור אליך.</div>';
   else if(w.ended)body='<div class="card big">הסדנה הזו כבר התקיימה.</div>';
   else if(!w.open||w.started)body='<div class="card big">ההרשמה לסדנה סגורה.</div>';
@@ -199,12 +199,14 @@ function wsPublicView(){
   else if(w.free<=0)body='<div class="card big">כל המקומות בסדנה נתפסו. אפשר לפנות לסטודיו לרשימת המתנה.</div>';
   else body='<div class="card"><h2>הרשמה</h2><div class="field"><label>שם מלא</label><input id="wName" maxlength="40"></div>'+
     '<div class="field"><label>טלפון</label><input id="wPhone" inputmode="tel" maxlength="20"></div>'+
+    (w.price?'<label class="chk"><input type="checkbox" id="wCo"> התשלום על ידי חברה</label><div id="wCoBox" style="display:none"><div class="field"><label>שם החברה</label><input id="wCoN" maxlength="60"></div><div class="field"><label>ח.פ / ע.מ</label><input id="wCoId" inputmode="numeric" maxlength="12"></div><div class="field"><label>מייל לחשבונית</label><input id="wCoM" type="email" maxlength="60"></div></div>':'')+
     '<button class="btn pri" id="wSend" style="width:100%">'+(w.approve?'שליחת בקשה':'הרשמה לסדנה')+'</button>'+
     (w.approve?'<div class="muted" style="margin-top:8px">ההרשמה תיכנס לתוקף אחרי אישור של הסטודיו.</div>':'')+'</div>';
   return wsCard(w,'')+body;
 }
 function bindWsPublic(){
-  var b=$('wSend');if(b)b.onclick=function(){var f={name:$('wName').value,phone:$('wPhone').value};
+  var c=$('wCo');if(c)c.onchange=function(){$('wCoBox').style.display=c.checked?'block':'none';};
+  var b=$('wSend');if(b)b.onclick=function(){var f={name:$('wName').value,phone:$('wPhone').value};var co=$('wCo');if(co&&co.checked){f.company=$('wCoN').value;f.taxId=$('wCoId').value;f.email=$('wCoM').value;if(!f.company.trim()||!f.taxId.trim()||!f.email.trim()){toast('צריך שם חברה, ח.פ ומייל');return;}}
     if(!f.name.trim()||!f.phone.trim()){toast('צריך שם וטלפון');return;}call('wsSignup',[BOOT.ws,'',f],setState);};
 }
 function bindStudent(){
@@ -261,7 +263,7 @@ function adminView(){
       '<div class="acts"><button class="btn pri" id="wsSave">'+(wsEdit?'שמירה':'פתיחת סדנה')+'</button>'+(wsEdit||wsCopy?'<button class="btn" id="wsCancelEdit">ביטול עריכה</button>':'<span></span>')+'</div></div>'+
       (S.workshops.length?S.workshops.map(function(w){
         var wa=w.link?'https://wa.me/?text='+encodeURIComponent('סדנה בסטודיו DNG: '+w.title+', יום '+dayName(w.date)+' '+fmtD(w.date)+' '+w.from+'–'+w.to+(w.price?' · '+w.price:'')+'. להרשמה: '+w.link):'';
-        var li=w.signups.map(function(x){return '<div class="li"><span>'+esc(x.name)+' <span class="muted">'+esc(x.phone)+'</span>'+(x.student?' <span class="tag">תלמיד/ה</span>':'')+'</span><span>'+
+        var li=w.signups.map(function(x){return '<div class="li"><span>'+esc(x.name)+' <span class="muted">'+esc(x.phone)+'</span>'+(x.student?' <span class="tag">תלמיד/ה</span>':'')+(x.company?'<div class="muted">חברה: '+esc(x.company)+'</div>':'')+(x.payUrl?(x.paid?' <span class="tag ok">שילם/ה ✓</span>':' <span class="tag wait">ממתין לתשלום</span> <button class="mini" data-cp="'+esc(x.payUrl)+'">העתקת קישור</button>'):'')+'</span><span>'+
           (x.status==='pending'?'<span class="tag wait">ממתין</span> <button class="mini" data-ws="wsOk" data-sid="'+x.sid+'">אישור</button> ':'')+
           '<button class="mini" data-ws="wsNo" data-sid="'+x.sid+'">הסר</button></span></div>';}).join('');
         return '<div class="card ws'+(w.ended?' lesson past':'')+'"><div class="top"><div><div class="day">'+esc(w.title)+'</div><div class="when">'+wsWhen(w)+'</div></div>'+
@@ -272,7 +274,7 @@ function adminView(){
           '<button class="mini" style="margin-top:6px" data-wsadd="'+w.id+'">+ הוספת נרשם/ת</button>'+
           (w.link?'<input class="link" style="margin-top:8px" readonly value="'+esc(w.link)+'" onclick="this.select()">':'')+
           '<div class="acts">'+(wa?'<a class="btn ok" style="text-align:center;text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה בוואטסאפ</a>':'<span></span>')+
-          '<button class="btn" data-ws="wsToggle" data-id="'+w.id+'">'+(w.open?'סגירת הרשמה':'פתיחת הרשמה')+'</button>'+
+          (w.signups.some(function(x){return x.payUrl&&!x.paid;})?'<button class="btn" data-ws="wsPayCheck" data-id="'+w.id+'">בדיקת תשלומים</button>':'')+'<button class="btn" data-ws="wsToggle" data-id="'+w.id+'">'+(w.open?'סגירת הרשמה':'פתיחת הרשמה')+'</button>'+
           '<button class="btn" data-wsed="'+w.id+'">עריכה</button><button class="btn" data-wscp="'+w.id+'">שכפול לתאריך אחר</button><button class="btn" data-wsdel="'+w.id+'">מחיקה</button></div></div>';}).join(''):'<div class="card"><div class="empty">עוד אין סדנאות</div></div>');
   }else if(tab==='stock'){
     body=stockView();
@@ -580,6 +582,7 @@ function bindAdmin(){
   document.querySelectorAll('[data-wsed]').forEach(function(b){b.onclick=function(){wsEdit=b.dataset.wsed;wsCopy=null;render();window.scrollTo(0,0);};});
   document.querySelectorAll('[data-wscp]').forEach(function(b){b.onclick=function(){var w=S.workshops.filter(function(x){return x.id===b.dataset.wscp;})[0];
     wsEdit='';wsCopy=Object.assign({},w,{date:''});render();window.scrollTo(0,0);toast('בוחרים תאריך ושומרים');};});
+  document.querySelectorAll('[data-cp]').forEach(function(b){b.onclick=function(){var u=b.dataset.cp;if(navigator.clipboard)navigator.clipboard.writeText(u).then(function(){toast('הקישור הועתק');});else window.prompt('',u);};});
   document.querySelectorAll('[data-wsdel]').forEach(function(b){b.onclick=function(){if(b.dataset.c){act('wsDelete',{id:b.dataset.wsdel});}else{b.dataset.c='1';b.textContent='למחוק עם כל הנרשמים?';setTimeout(function(){if(b.isConnected){delete b.dataset.c;b.textContent='מחיקה';}},3000);}};});
   document.querySelectorAll('[data-wsadd]').forEach(function(b){b.onclick=function(){var id=b.dataset.wsadd,nm=$('wsN_'+id).value.trim();if(!nm){toast('צריך שם');return;}act('wsAdd',{id:id,name:nm,phone:$('wsP_'+id).value});};});
   var ce=$('wsCancelEdit');if(ce)ce.onclick=function(){wsEdit='';wsCopy=null;render();};
