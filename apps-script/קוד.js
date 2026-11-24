@@ -713,7 +713,11 @@ function payState_(D, month) {
     return Object.assign({}, s, { members: D.stu.filter(x => x.status === 'approved' && x.slot === s.id).map(x => x.name).sort((a, b) => a.localeCompare(b, 'he')),
       link: g ? { lessons: +g.lessons || 0, price: num_(g.price), url: g.url, desc: g.desc, createdAt: +g.createdAt || 0 } : null, paid: paid ? (paid[s.id] || []) : null });
   });
-  return { month: m, label: monthLabel_(m), price: lessonPrice_(D), slots, groups, imp, students, connected: !!(mp.id && mp.secret), sandbox: mp.sandbox, msg };
+  const combos = D.grp.filter(r => r.month === m && String(r.slot).indexOf('combo:') === 0).map(r => {
+    const st = D.stu.find(x => x.token === String(r.slot).slice(6));
+    return { token: String(r.slot).slice(6), name: st ? st.name : String(r.desc).split(' – ')[0], phone: st ? st.phone : '', lessons: +r.lessons || 0, price: num_(r.price), url: r.url, desc: r.desc, paid: paid ? (paid[r.slot] || []) : null };
+  });
+  return { month: m, label: monthLabel_(m), price: lessonPrice_(D), slots, groups, combos, imp, students, connected: !!(mp.id && mp.secret), sandbox: mp.sandbox, msg };
 }
 function payAction_(D, act, p) {
   const r = p.id ? D.pay.find(x => x.id === clean_(p.id)) : null;
@@ -777,6 +781,23 @@ function payAction_(D, act, p) {
       Utilities.sleep(300);
     });
     PAY_MSG_ = (made ? 'נוצרו ' + made + ' קישורים לקבוצות' : 'לא נוצרו קישורים חדשים') + (skip ? ' · ' + skip + ' כבר היו' : '') + (errs.length ? '\nשגיאות:\n' + errs.join('\n') : '');
+  }
+  else if (act === 'payComboCreate') { // קישור אחד לתלמיד/ה שבשתי קבוצות: סכום השיעורים של שתיהן
+    const m = validMonth_(p.month), price = lessonPrice_(D), st = D.stu.find(x => x.token === clean_(p.token) && x.status === 'approved');
+    const sl = (Array.isArray(p.slots) ? p.slots : []).slice(0, 2), ns = (Array.isArray(p.counts) ? p.counts : []).slice(0, 2).map(v => Math.max(0, Math.min(10, Math.floor(+v || 0))));
+    if (!mProps_().id) throw new Error('קודם מחברים את Morning (מפתח API)');
+    if (!st) throw new Error('צריך לבחור תלמיד/ה');
+    if (sl.length !== 2 || !slotById_(sl[0]) || !slotById_(sl[1]) || sl[0] === sl[1]) throw new Error('צריך לבחור שתי קבוצות שונות');
+    if (!ns[0] || !ns[1]) throw new Error('צריך לפחות שיעור אחד בכל קבוצה');
+    const n = ns[0] + ns[1], amount = n * price, key = 'combo:' + st.token;
+    const desc = st.name + ' – ' + slotName_(sl[0]) + ' + ' + slotName_(sl[1]) + ' ' + MONTHS_HE[+m.slice(5, 7) - 1] + ' – ' + n + ' שיעורים';
+    const ex = D.grp.find(r => r.month === m && r.slot === key);
+    if (ex && ex.url && +ex.lessons === n && num_(ex.price) === amount && ex.desc === desc) PAY_MSG_ = 'כבר יש קישור משולב עם אותם נתונים';
+    else {
+      const L = mCreateGroupLink_(desc, amount), f = { month: m, slot: key, lessons: n, price: amount, linkId: L.id, url: L.url, desc, createdAt: Date.now() };
+      if (ex) setRow_(D, 'grp', ex, f); else addRow_(D, 'grp', f);
+      PAY_MSG_ = 'נוצר קישור משולב ל' + st.name + ': ' + n + ' שיעורים, ' + amount + ' ₪';
+    }
   }
   else if (act === 'payGroupCheck') { // מי שילם: חשבוניות ב-Morning עם התיאור של קישור הקבוצה
     const m = validMonth_(p.month), G = D.grp.filter(r => r.month === m && r.desc);

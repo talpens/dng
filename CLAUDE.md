@@ -65,6 +65,8 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
   matches description = link desc. "ייבוא תלמידים מ-Morning": preview, then add, the people who paid in a month as
   approved students (+ invite) in the group named in their invoice ("שני ערב" → wed-pm, the Monday group moved);
   unclear ones can be assigned by hand. Changing the count/price after a link exists → a new link.
+  "קישור משולב" (payComboCreate): one personal link for a student in TWO groups = (lessons A + lessons B) × price; stored in
+  GroupLinks with slot = 'combo:<student token>' (one per student per month), description "<name> – <slot A> + <slot B> <month> – N שיעורים".
   (Older per-student links via `POST /payments/form` + doPost notify still exist in code: Payments sheet.)
   Morning API key: Tal pastes ID + Secret in the admin tab → Script Properties MORNING_ID / MORNING_SECRET
   (+ MORNING_SANDBOX, MORNING_PLUGIN = clearing plugin id from /documents/info, MORNING_HOOK). Never in the Sheet or repo.
