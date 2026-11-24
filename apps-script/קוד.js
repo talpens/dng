@@ -964,11 +964,14 @@ function mCreateGroupLink_(desc, price) {
     const data = { description: desc, documentType: 320, documentVatType: 0, notify: true, addClient: false, maxPayments: 1, maxQuantity: 1, themeId: 1002,
       openAmount: false, showSearchEngines: false, enablePredefinedPaymentAmounts: false, predefinedPaymentAmounts: [], requireTaxId: false };
     if (v.plugins === 'none') data.plugins = [];
-    else if (v.plugins === 'typed' && pid) data.plugins = [{ id: pid, type: 12200 }];
+    else if (v.plugins === 'typed' && pid) data.plugins = [{ id: pid, type: v.ptype || 12200 }];
     else if (v.plugins === 'idonly' && pid) data.plugins = [{ id: pid }];
-    return { type: v.type, price, currency: 'ILS', description: desc, themeId: 1002, active: true, showSearchEngines: false, documentType: v.top ? 320 : undefined, data };
+    else if (v.plugins === 'typeonly') data.plugins = [{ type: v.ptype || 12200 }];
+    return { type: 0, price, currency: 'ILS', description: desc, themeId: 1002, active: true, showSearchEngines: false, documentType: 320, data };
   };
-  const tries = [{ type: 0 }, { type: 0, plugins: 'typed' }, { type: 0, plugins: 'idonly' }, { type: 0, plugins: 'none' }, { type: 320, plugins: 'typed' }, { type: 0, plugins: 'typed', top: true }];
+  // הלוג הראה: סוג מסמך מתקבל רק ברמה העליונה, ואז נשארת שאלה מה צורת התוסף. מנסים כמה צורות.
+  try { const inf = mFetch_('get', '/documents/info?type=320'); console.log('documents/info plugins: ' + JSON.stringify(inf.paymentPlugins || inf.plugins || inf).slice(0, 600)); } catch (e) { console.log('documents/info failed: ' + e.message); }
+  const tries = [{ plugins: 'none' }, { plugins: 'idonly' }, { plugins: 'typed' }, { plugins: 'typed', ptype: 10 }, { plugins: 'typed', ptype: 1 }, { plugins: 'typeonly' }, { plugins: 'typeonly', ptype: 10 }];
   let d = null, err = null;
   for (let i = 0; i < tries.length && !d; i++) {
     try { d = mFetch_('post', '/payments/links', mk(tries[i])); }
