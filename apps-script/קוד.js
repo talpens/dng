@@ -18,7 +18,7 @@ const SHEETS = {
   Makeups:   ['token', 'lessonKey', 'status', 'createdAt', 'decidedAt'],
   Cancelled: ['lessonKey', 'createdAt'],
   Workshops: ['id', 'title', 'date', 'from', 'to', 'seats', 'price', 'desc', 'approve', 'status', 'createdAt', 'who'],
-  WsSignups: ['wsId', 'sid', 'token', 'name', 'phone', 'status', 'createdAt'],
+  WsSignups: ['wsId', 'sid', 'token', 'name', 'phone', 'status', 'createdAt', 'payUrl', 'payDesc', 'paid', 'company', 'taxId', 'email'],
   Inventory: ['id', 'name', 'qty', 'min', 'unit', 'cat', 'note', 'updatedAt', 'alerted'],
   Recipes:   ['id', 'name', 'parts', 'note', 'createdAt', 'lastMade', 'lastKg'],
   Teachers:  ['id', 'name', 'phone', 'slots', 'createdAt'],
@@ -120,6 +120,7 @@ const LAZY_SHEETS = ['Workshops', 'WsSignups', 'Inventory', 'Recipes', 'Teachers
 function sh_(n) {
   if (SH_[n]) return SH_[n];
   let s = ss_().getSheetByName(n);
+  if (s && n === 'WsSignups' && s.getLastColumn() < SHEETS[n].length) { const h = SHEETS[n]; s.getRange(1, 1, s.getMaxRows(), h.length).setNumberFormat('@'); s.getRange(1, 1, 1, h.length).setValues([h]).setFontWeight('bold'); }
   if (!s && LAZY_SHEETS.indexOf(n) >= 0) { // גיליונות חדשים נוצרים לבד בפעם הראשונה, בלי להריץ setup
     s = ss_().insertSheet(n); const h = SHEETS[n];
     s.getRange(1, 1, s.getMaxRows(), h.length).setNumberFormat('@');
@@ -413,7 +414,7 @@ function adminState_(D, adminKey, weekOff, month) {
   const base = D.set.APP_URL || url;
   const workshops = D.ws.slice().sort(wsSort_).filter(w => !wsEnded_(w) || w.date >= addDays_(ilNow_().date, -14)).map(w => Object.assign(wsPub_(D, w, ''), {
     status: w.status, link: base ? base + '?w=' + w.id : '',
-    signups: D.wss.filter(x => x.wsId === w.id && x.status !== 'no').map(x => ({ sid: x.sid, name: x.name, phone: x.phone, status: x.status, student: !!x.token })) }));
+    signups: D.wss.filter(x => x.wsId === w.id && x.status !== 'no').map(x => ({ sid: x.sid, name: x.name, phone: x.phone, status: x.status, student: !!x.token, payUrl: x.payUrl || '', company: x.company ? x.company + ' · ח.פ ' + x.taxId + ' · ' + x.email : '', paid: x.paid === '1' })) }));
   const pendingWs = D.wss.filter(x => x.status === 'pending').map(x => { const w = D.ws.find(y => y.id === x.wsId); return w && !wsEnded_(w) ? { sid: x.sid, name: x.name, phone: x.phone, title: w.title, date: w.date, free: wsFree_(D, w) } : null; }).filter(Boolean);
   const stock = D.stock.map(stockPub_).sort((a, b) => (a.cat || '\uffff').localeCompare(b.cat || '\uffff', 'he') || a.name.localeCompare(b.name, 'he'));
   return { state: 'ok', slots: SLOTS, seats: seats_(D), wk, pendingJoin, pendingMk, pendingWs, week, students, invites, workshops, stock, recipes: D.rec.map(recPub_).sort((a, b) => a.name.localeCompare(b.name, 'he')),
@@ -504,6 +505,18 @@ function adminAction(adminKey, act, p) {
       const x = D.wss.find(y => y.sid === clean_(p.sid));
       if (x) setRow_(D, 'wss', x, { status: act === 'wsOk' ? 'ok' : 'no' });
     }
+    else if (act === 'wsPayCheck' && p.id) { // מי שילם: חשבוניות ב-Morning עם התיאור של קישור הנרשם
+      const id = clean_(p.id), L = D.wss.filter(x => x.wsId === id && x.payDesc && x.paid !== '1');
+      if (L.length) {
+        const from = Utilities.formatDate(new Date(Math.min.apply(null, L.map(x => +x.createdAt || Date.now())) - 864e5), TZ, 'yyyy-MM-dd'), docs = [];
+        for (let pg = 1; pg <= 10; pg++) {
+          const d = mFetch_('post', '/documents/search', { fromDate: from, toDate: addDays_(ilNow_().date, 1), page: pg, pageSize: 100 });
+          (d.items || []).forEach(x => docs.push(x));
+          if (!d.pages || pg >= d.pages) break;
+        }
+        L.forEach(x => { if (docs.some(d => d.description === x.payDesc || (d.income || []).some(i => i.description === x.payDesc))) setRow_(D, 'wss', x, { paid: '1' }); });
+      }
+    }
     else if (act === 'wsAdd' && p.id) { // רישום ידני על ידי טל (למשל מי שהתקשר/ה)
       const w = D.ws.find(x => x.id === clean_(p.id)), name = String(p.name || '').trim().slice(0, 40);
       if (w && name) addRow_(D, 'wss', { wsId: w.id, sid: randomToken_(12), token: '', name, phone: String(p.phone || '').trim().slice(0, 20), status: 'ok', createdAt: Date.now() });
@@ -547,10 +560,10 @@ function wsDayName_(iso) { return ['ראשון', 'שני', 'שלישי', 'רבי
 
 /** דף ציבורי של סדנה (?w=ID) */
 function wsPublicState(id) { return wsPublicState_(load_(), clean_(id)); }
-function wsPublicState_(D, id, done) {
+function wsPublicState_(D, id, done, payUrl) {
   const w = D.ws.find(x => x.id === id);
   if (!w) return { state: 'wsinvalid' };
-  return { state: 'ws', ws: wsPub_(D, w, ''), done: done || '' };
+  return { state: 'ws', ws: wsPub_(D, w, ''), done: done || '', payUrl: payUrl || '' };
 }
 /** הרשמה לסדנה. token = קישור אישי של תלמיד/ה (אם יש). f = { name, phone } למי שנרשם/ת מקישור הסדנה. */
 function wsSignup(id, token, f) {
@@ -575,12 +588,25 @@ function wsSignup(id, token, f) {
     }
     if (wsFree_(D, w) <= 0) throw new Error('אין יותר מקומות בסדנה');
     const status = w.approve === '1' ? 'pending' : 'ok';
-    addRow_(D, 'wss', { wsId: id, sid: randomToken_(12), token, name, phone, status, createdAt: Date.now() });
+    const rec = { wsId: id, sid: randomToken_(12), token, name, phone, status, createdAt: Date.now() };
+    if (!token && String(f.company || '').trim()) { // תשלום על ידי חברה: שם חברה, ח.פ ומייל
+      rec.company = String(f.company).trim().slice(0, 60); rec.taxId = String(f.taxId || '').replace(/\D/g, '').slice(0, 12); rec.email = String(f.email || '').trim().slice(0, 60);
+      if (!rec.taxId || !/^\S+@\S+\.\S+$/.test(rec.email)) throw new Error('לתשלום על ידי חברה צריך ח.פ ומייל תקין');
+    }
+    // תשלום: למי שנרשם מקישור הסדנה ויש מחיר בסדנה – נוצר קישור תשלום אישי ב-Morning. אם נכשל, ההרשמה נשמרת בלי קישור.
+    const amount = token ? 0 : num_(String(w.price || '').replace(/[^\d.,]/g, ''));
+    if (amount > 0 && mProps_().id) {
+      try {
+        const desc = 'סדנה ' + w.title + ' ' + fmtD_(w.date) + ' – ' + (rec.company ? rec.company + ' (' + name + ')' : name) + ' (' + rec.sid.slice(0, 4) + ')';
+        rec.payUrl = mCreateGroupLink_(desc, amount, rec.company).url; rec.payDesc = desc;
+      } catch (e) { console.log('ws pay link failed: ' + e.message); }
+    }
+    addRow_(D, 'wss', rec);
     saveCache_(D);
     notify_(D, (status === 'pending' ? 'בקשת הרשמה לסדנה: ' : 'נרשמ/ה לסדנה: ') + name,
       name + ' (' + phone + ') ' + (status === 'pending' ? 'מבקש/ת להירשם' : 'נרשמ/ה') + ' לסדנה "' + w.title + '" ב' + wsDayName_(w.date) + ' ' + wsDateTxt_(w) +
       '\nנשארו ' + wsFree_(D, w) + ' מקומות.');
-    return token ? studentState_(D, token) : wsPublicState_(D, id, status);
+    return token ? studentState_(D, token) : wsPublicState_(D, id, status, rec.payUrl);
   });
 }
 /** תלמיד/ה מבטל/ת הרשמה לסדנה (רק לפני שהתחילה). */
@@ -1001,7 +1027,7 @@ function mCreateLink_(D, m, st, n, price, payId) {
   return d.url;
 }
 /** קישור תשלום קבוע ב-Morning (כמו "קישור לתשלום" באתר): כמה אנשים יכולים לשלם בו. מחזיר { id, url }. */
-function mCreateGroupLink_(desc, price) {
+function mCreateGroupLink_(desc, price, company) {
   // Morning דורש סוג מסמך (320 = חשבונית מס/קבלה, כמו כל המסמכים בחשבון) ותוסף סליקה (אשראי, סוג 12200).
   // לא ידוע בדיוק באיזו צורה הוא מצפה לשדות האלה, אז מנסים כמה צורות בסדר, ועוברות הלאה רק על שגיאות של סוג מסמך/תוסף.
   let full = null; try { full = (mFetch_('get', '/documents/info?type=320').paymentPlugins || [])[0] || null; } catch (e) { console.log('documents/info failed: ' + e.message); }
@@ -1009,7 +1035,7 @@ function mCreateGroupLink_(desc, price) {
   const today = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
   const mk = v => {
     const data = { description: desc, documentType: 320, documentVatType: 0, notify: true, addClient: false, maxPayments: 1, maxQuantity: 1, themeId: 1002,
-      openAmount: false, showSearchEngines: false, enablePredefinedPaymentAmounts: false, predefinedPaymentAmounts: [], requireTaxId: false };
+      openAmount: false, showSearchEngines: false, enablePredefinedPaymentAmounts: false, predefinedPaymentAmounts: [], requireTaxId: !!company };
     if (v.date) data.date = today;
     if (v.plugins === 'none') data.plugins = [];
     else if (v.plugins === 'full' && full) data.plugins = [full];
