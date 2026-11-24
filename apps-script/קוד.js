@@ -767,17 +767,25 @@ function mJson_(res) { try { return JSON.parse(res.getContentText() || '{}'); } 
 function mToken_() {
   const c = CacheService.getScriptCache(), hit = c.get('mtok'); if (hit) return hit;
   const mp = mProps_(); if (!mp.id || !mp.secret) throw new Error('Morning לא מחובר');
-  let tok = '';
-  // הדרך החדשה של Morning, ואם לא עובדת – הדרך הוותיקה של חשבונית ירוקה
-  try {
-    const r = UrlFetchApp.fetch(mp.sandbox ? 'https://api.sandbox.morning.dev/idp/v1/oauth/token' : 'https://api.morning.co/idp/v1/oauth/token', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      payload: JSON.stringify({ grant_type: 'client_credentials', client_id: mp.id, client_secret: mp.secret }) });
-    const d = mJson_(r); if (r.getResponseCode() < 300 && d.accessToken) tok = d.accessToken;
-  } catch (e) { console.log('morning idp token failed: ' + e); }
+  let tok = ''; const diag = [];
+  const short = r => r.getResponseCode() + ' ' + r.getContentText().replace(/\s+/g, ' ').slice(0, 160);
+  // הדרך החדשה של Morning (JSON ואז טופס), ואם לא עובדת – הדרך הוותיקה של חשבונית ירוקה
+  const idp = mp.sandbox ? 'https://api.sandbox.morning.dev/idp/v1/oauth/token' : 'https://api.morning.co/idp/v1/oauth/token';
+  const tries = [
+    () => UrlFetchApp.fetch(idp, { method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ grant_type: 'client_credentials', client_id: mp.id, client_secret: mp.secret }) }),
+    () => UrlFetchApp.fetch(idp, { method: 'post', muteHttpExceptions: true, payload: { grant_type: 'client_credentials', client_id: mp.id, client_secret: mp.secret } }),
+    () => UrlFetchApp.fetch(mBase_(mp) + '/account/token', { method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ id: mp.id, secret: mp.secret }) }),
+  ];
+  for (let i = 0; i < tries.length && !tok; i++) {
+    try {
+      const r = tries[i](), d = mJson_(r);
+      tok = (r.getResponseCode() < 300 && (d.accessToken || d.access_token || d.token)) || (r.getResponseCode() < 300 && (r.getHeaders() || {})['X-Authorization-Bearer']) || '';
+      if (!tok) diag.push((i + 1) + ': ' + short(r));
+    } catch (e) { diag.push((i + 1) + ': ' + String(e).slice(0, 120)); }
+  }
   if (!tok) {
-    const r = UrlFetchApp.fetch(mBase_(mp) + '/account/token', { method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ id: mp.id, secret: mp.secret }) });
-    const d = mJson_(r); tok = d.token || (r.getHeaders() || {})['X-Authorization-Bearer'] || '';
-    if (!tok) throw new Error('Morning לא קיבל את המפתח. לבדוק שהעתקת נכון את ה-ID וה-Secret' + (d.errorMessage ? ' (' + d.errorMessage + ')' : ''));
+    console.log('morning token failed (' + (mp.sandbox ? 'sandbox' : 'production') + ', id length ' + mp.id.length + ', secret length ' + mp.secret.length + '): ' + diag.join(' | '));
+    throw new Error('Morning לא קיבל את המפתח. לבדוק שה-ID וה-Secret לא הוחלפו ביניהם' + (mp.sandbox ? ', ושזה באמת מפתח של חשבון ניסיון' : ', ושזה מפתח של החשבון האמיתי (לא Sandbox)') + '. פרטים: ' + diag.join(' | ').slice(0, 300));
   }
   c.put('mtok', tok, 20 * 60);
   return tok;
