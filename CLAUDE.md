@@ -56,7 +56,7 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
   lessonKey → teacherId) and replaces the regular teachers for that lesson only. Students see the teacher on each lesson.
   The Teachers tab is seeded once on creation (Tair: sun-am, wed-pm; "דורון נעמה גלפר": the rest).
 
-  Teacher page (`?m=<Teachers.id>`, link copied from the admin Teachers tab): read-only view of all workshops (price, description,
+  Teacher page (`?m=<Teachers.id>`, link copied from the admin Teachers tab or the Links tab, which can also add a teacher): read-only view of all workshops (price, description,
   names of sign-ups, no phones, no actions). The teacher's id is the secret; deleting the teacher kills the link. `teacherState` in the server.
 
 - Monthly payments (תשלומים, admin tab, Morning = formerly Green Invoice): ONE reusable Morning payment link per group

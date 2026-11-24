@@ -291,6 +291,9 @@ function adminView(){
     body='<div class="card"><h2>קישור הרשמה אישי</h2><div class="muted" style="margin-bottom:8px">כל תלמיד/ה מקבל/ת קישור משלו/ה. רק מי שיש לו קישור יכול להירשם.</div>'+
       (S.hasUrl?'':'<div class="notice">צריך קודם לפרסם את האפליקציה (Deploy) כדי שיהיו קישורים.</div>')+
       '<div class="field"><label>שם התלמיד/ה (לזיהוי שלך)</label><input id="invLabel" maxlength="40"></div><div class="field"><label>שיעור קבוע</label><select id="invSlot"><option value="">התלמיד/ה בוחר/ת</option>'+S.slots.map(function(x){return '<option value="'+x.id+'">'+x.day+' '+x.part+' · '+x.from+'</option>';}).join('')+'</select></div><button class="btn pri" id="invNew" style="width:100%">יצירת קישור</button></div>'+
+      '<div class="card"><h2>קישור אישי למורה</h2><div class="muted" style="margin-bottom:8px">מורה רואה את כל הסדנאות (לצפייה בלבד). מוסיפים מורה ומעתיקים לה את הקישור.</div>'+
+      '<div class="field"><label>שם המורה</label><input id="tlName" maxlength="40"></div><div class="field"><label>טלפון (לא חובה)</label><input id="tlPhone" inputmode="tel" maxlength="20"></div><button class="btn pri" id="tlNew" style="width:100%">הוספת מורה</button>'+
+      (S.teachers||[]).map(function(t){return '<div class="li"><b>'+esc(t.name)+'</b>'+(t.link?'<button class="mini" data-tcopy="'+esc(t.link)+'">העתקת קישור</button>':'')+'</div>';}).join('')+'</div>'+
       '<div class="card"><h2>קישורים</h2>'+(S.invites.length?byGroup(S.invites.slice().sort(function(a,b){return (a.label||'').localeCompare(b.label||'','he');}),function(i){return i.grp;},function(i){var wa='https://wa.me/?text='+encodeURIComponent('היי'+(i.label?' '+i.label:'')+', זה הקישור האישי שלך להרשמה'+(i.slot?' לשיעור הקבוע ב'+slotName(i.slot):' לשיעורים')+' בסטודיו DNG: '+i.link);
         return '<div class="req"><div class="row"><b>'+esc(i.label||'ללא שם')+(i.slot?' <span class="tag mine">'+esc(slotName(i.slot))+'</span>':'')+'</b><span class="tag'+(i.used?' ok':'')+'">'+(i.used?'בשימוש':'לא נוצל')+'</span></div>'+
         (i.link?'<input class="link" readonly value="'+esc(i.link)+'" onclick="this.select()">':'')+
@@ -341,9 +344,6 @@ function bindTeachers(act){
   var sv=$('tcSave');if(sv)sv.onclick=function(){var f={id:tcEdit==='new'?'':tcEdit,name:$('tcName').value,phone:$('tcPhone').value,week:week};
     if(!f.name.trim()){toast('צריך שם');return;}var was=tcEdit!=='new';
     call('adminAction',[BOOT.admin,'tchSave',f],function(r){tcEdit='';setState(r);toast(was?'נשמר':'המורה נוסף/ה');});};
-  document.querySelectorAll('[data-tcopy]').forEach(function(b){b.onclick=function(){var u=b.dataset.tcopy;
-    function old(){var t=document.createElement('textarea');t.value=u;document.body.appendChild(t);t.select();try{document.execCommand('copy');toast('הקישור הועתק');}catch(e){toast('לא הצלחתי להעתיק');}t.remove();}
-    try{navigator.clipboard.writeText(u).then(function(){toast('הקישור הועתק');},old);}catch(e){old();}};});
   var d=$('tcDel');if(d)d.onclick=function(){if(d.dataset.c){call('adminAction',[BOOT.admin,'tchDelete',{id:tcEdit,week:week}],function(r){tcEdit='';setState(r);toast('המורה נמחק/ה');});}else{d.dataset.c='1';d.textContent='בטוח למחוק?';setTimeout(function(){if(d.isConnected){delete d.dataset.c;d.textContent='מחיקת המורה';}},3000);}};
 }
 function adminWsWeekCard(w){
@@ -618,6 +618,10 @@ function bindAdmin(){
     var sc=$('stCancel');if(sc)sc.onclick=function(){stEdit='';stForm=false;render();};
     var sd=$('stDel');if(sd)sd.onclick=function(){if(sd.dataset.c){call('adminAction',[K,'stockDelete',{id:stEdit,week:week}],function(r){stEdit='';setState(r);toast('הפריט נמחק');});}else{sd.dataset.c='1';sd.textContent='בטוח למחוק?';setTimeout(function(){if(sd.isConnected){delete sd.dataset.c;sd.textContent='מחיקת הפריט';}},3000);}};
   }
+  document.querySelectorAll('[data-tcopy]').forEach(function(b){b.onclick=function(){var u=b.dataset.tcopy;
+    function old(){var t=document.createElement('textarea');t.value=u;document.body.appendChild(t);t.select();try{document.execCommand('copy');toast('הקישור הועתק');}catch(e){toast('לא הצלחתי להעתיק');}t.remove();}
+    try{navigator.clipboard.writeText(u).then(function(){toast('הקישור הועתק');},old);}catch(e){old();}};});
+  var tn=$('tlNew');if(tn)tn.onclick=function(){var nm=$('tlName').value;if(!nm.trim()){toast('צריך שם');return;}act('tchSave',{name:nm,phone:$('tlPhone').value});toast('המורה נוספה. אפשר להעתיק לה קישור');};
   var nv=$('invNew');if(nv)nv.onclick=function(){act('invite',{label:$('invLabel').value,slot:$('invSlot').value});toast('נוצר קישור');};
 }
 /* משיכה למטה מראש הדף = רענון הנתונים */
