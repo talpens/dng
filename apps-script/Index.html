@@ -96,7 +96,7 @@ var $=function(id){return document.getElementById(id);};
 function esc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function toast(m){var t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(function(){t.classList.remove('on');},2200);}
 function fmtD(iso){var p=iso.split('-');return (+p[2])+'.'+(+p[1]);}
-var SL={},S=null,week=0,tab='',payMonth='',impFrom='',payOv={},payN={},payKeyForm=false,ADMIN=!!BOOT.admin,tcEdit='',wsEdit='',wsCopy=null,stEdit='',stForm=false,stPend={},stBusy=0,rcEdit='',rcRows=[],rcPrev={};
+var SL={},S=null,week=0,tab='',payMonth='',impFrom='',payOv={},payN={},payCb={t:'',a:'',b:'',na:null,nb:null},payKeyForm=false,ADMIN=!!BOOT.admin,tcEdit='',wsEdit='',wsCopy=null,stEdit='',stForm=false,stPend={},stBusy=0,rcEdit='',rcRows=[],rcPrev={};
 var DAYS=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
 function dayName(iso){return DAYS[new Date(iso+'T12:00:00Z').getUTCDay()];}
 function wsWhen(w){return 'יום '+dayName(w.date)+' '+fmtD(w.date)+' · <bdi dir="ltr">'+w.from+'–'+w.to+'</bdi>';}
@@ -333,6 +333,25 @@ function payLessons(st){
   return payOv[st.slot]!=null?Math.max(0,payOv[st.slot]-(s.count-st.lessons)):st.lessons;
 }
 function payNeeds(st){var n=payLessons(st),p=st.pay;if(st.gone||!n)return false;if(!p)return true;return p.status!=='paid'&&(!p.url||p.lessons!==n||p.amount!==n*S.pay.price);}
+function payComboCard(){
+  var P=S.pay,st=(P.students||[]).filter(function(x){return !x.gone;}),c=payCb,T=st.filter(function(x){return x.token===c.t;})[0];
+  var A=c.a||(T?T.slot:''),B=c.b||'';
+  function cnt(id){var s=P.slots.filter(function(x){return x.id===id;})[0];return s?s.count:0;}
+  var na=c.na!=null?c.na:cnt(A),nb=c.nb!=null?c.nb:cnt(B);
+  function opts(sel){return '<option value="">בחירה…</option>'+S.slots.map(function(sl){return '<option value="'+sl.id+'"'+(sel===sl.id?' selected':'')+'>'+esc(slotName(sl.id))+'</option>';}).join('');}
+  var ok=T&&A&&B&&A!==B&&na>0&&nb>0,n=na+nb;
+  var list=(P.combos||[]).map(function(x){
+    var wa=x.phone?'https://wa.me/'+waPhone(x.phone)+'?text='+encodeURIComponent('היי '+x.name+', התשלום לחודש '+P.label+': '+x.lessons+' שיעורים, '+x.price+' ₪.\nלתשלום: '+x.url+'\nתודה!'):'';
+    return '<div class="li" style="display:block"><b>'+esc(x.name)+'</b> <span class="muted">'+x.lessons+' שיעורים · '+x.price+' ₪'+(x.paid?(x.paid.length?' · <b>שילם/ה ✓</b>':' · עוד לא שילם/ה'):'')+'</span>'+
+      '<div class="muted">'+esc(x.desc)+'</div><input class="link" style="margin-top:6px" readonly value="'+esc(x.url)+'" onclick="this.select()">'+
+      '<div class="acts">'+(wa?'<a class="btn ok" style="text-align:center;text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה בוואטסאפ</a>':'')+'<button class="btn" data-pcopy="'+esc(x.url)+'">העתקת קישור</button></div></div>';}).join('');
+  return '<div class="card"><h2>קישור משולב לתלמיד/ה בשתי קבוצות</h2><div class="muted" style="margin-bottom:8px">קישור אחד עם הסכום של שתי הקבוצות יחד. שולחים רק לתלמיד/ה הזה/ו.</div>'+
+    '<div class="field"><label>תלמיד/ה</label><select id="cbT"><option value="">בחירה…</option>'+st.map(function(x){return '<option value="'+x.token+'"'+(x.token===c.t?' selected':'')+'>'+esc(x.name)+'</option>';}).join('')+'</select></div>'+
+    '<div class="row" style="gap:8px"><select id="cbA" class="sub">'+opts(A)+'</select><input class="pn" id="cbNa" inputmode="numeric" value="'+na+'" aria-label="שיעורים בקבוצה הראשונה"></div>'+
+    '<div class="row" style="gap:8px;margin-top:6px"><select id="cbB" class="sub">'+opts(B)+'</select><input class="pn" id="cbNb" inputmode="numeric" value="'+nb+'" aria-label="שיעורים בקבוצה השנייה"></div>'+
+    (ok?'<div class="muted" style="margin-top:6px">'+n+' × '+P.price+' = <b>'+(n*P.price)+' ₪</b></div>':'')+
+    '<button class="btn pri" id="cbGo" style="width:100%;margin-top:8px"'+(ok&&P.connected?'':' disabled')+'>יצירת קישור משולב</button>'+list+'</div>';
+}
 function payKeysCard(){
   return '<div class="card" id="payKeys"><h2>חיבור ל-Morning</h2><div class="muted" style="margin-bottom:8px;line-height:1.6">ב-Morning: המשתמש שלי ← כלי מפתחים ← מפתחות API ← יצירת מפתח. מעתיקים לכאן את ה-ID ואת ה-Secret. המפתח נשמר רק בשרת של האפליקציה ולא מוצג שוב.</div>'+
     '<div class="field"><label>ID</label><input id="pkId" dir="ltr" autocomplete="off"></div>'+
@@ -373,7 +392,7 @@ function payView(){
       (!I.done&&(I.add.length||I.skip.some(function(x){return x.unclear;}))?'<button class="btn ok" id="impGo" data-from="'+esc(I.month)+'" style="width:100%;margin-top:8px">הוספה לקבוצות</button>':'')+'</div>';}
   imp+='</div>';
   return head+msg+keys+'<div class="muted" style="margin:0 4px 8px">מספר השיעורים נספר לפי הלוח, בלי שיעורים שבוטלו. אפשר לתקן (חג, חופשה).</div>'+go+cards+
-    '<p class="foot">לכל קבוצה נוצר קישור תשלום קבוע אחד ב-Morning, וכל חברי הקבוצה משלמים בו. שולחים אותו לקבוצת הוואטסאפ. אחרי תשלום Morning מוציא חשבונית מס/קבלה. "מי שילם?" בודק את החשבוניות ב-Morning. שינית מספר שיעורים אחרי שנוצר קישור? לוחצים שוב "יצירת קישורים" ונוצר קישור חדש בסכום המעודכן.</p>'+imp;
+    '<p class="foot">לכל קבוצה נוצר קישור תשלום קבוע אחד ב-Morning, וכל חברי הקבוצה משלמים בו. שולחים אותו לקבוצת הוואטסאפ. אחרי תשלום Morning מוציא חשבונית מס/קבלה. "מי שילם?" בודק את החשבוניות ב-Morning. שינית מספר שיעורים אחרי שנוצר קישור? לוחצים שוב "יצירת קישורים" ונוצר קישור חדש בסכום המעודכן.</p>'+(P.connected?payComboCard():'')+imp;
 }
 function bindPay(act){
   document.querySelectorAll('[data-pm]').forEach(function(b){b.onclick=function(){payMonth=addMonth(payMonth,+b.dataset.pm);payOv={};payN={};call('adminState',[BOOT.admin,week,payMonth],setState);};});
@@ -392,6 +411,15 @@ function bindPay(act){
     try{navigator.clipboard.writeText(u).then(function(){toast('הקישור הועתק');},old);}catch(e){old();}};});
   var g=$('payGo');if(g)g.onclick=function(){var c={};S.pay.groups.forEach(function(x){c[x.id]=paySlotCount(x.id);});
     g.textContent='יוצר קישורים…';call('adminAction',[BOOT.admin,'payGroupCreate',{counts:c,week:week}],function(r){setState(r);});};
+  function cbRead(){payCb.t=$('cbT').value;payCb.a=$('cbA').value;payCb.b=$('cbB').value;}
+  var cT=$('cbT');if(cT){cT.onchange=function(){cbRead();payCb.a='';payCb.na=null;payCb.nb=null;render();};
+    $('cbA').onchange=function(){cbRead();payCb.na=null;render();};$('cbB').onchange=function(){cbRead();payCb.nb=null;render();};
+    $('cbNa').onchange=function(){cbRead();var v=parseInt(this.value,10);payCb.na=v>=0&&v<=10?v:null;render();};
+    $('cbNb').onchange=function(){cbRead();var v=parseInt(this.value,10);payCb.nb=v>=0&&v<=10?v:null;render();};
+    $('cbGo').onclick=function(){var P=S.pay,A=payCb.a||((P.students.filter(function(x){return x.token===payCb.t;})[0]||{}).slot),B=payCb.b;
+      function cnt(id){var s=P.slots.filter(function(x){return x.id===id;})[0];return s?s.count:0;}
+      var na=payCb.na!=null?payCb.na:cnt(A),nb=payCb.nb!=null?payCb.nb:cnt(B);
+      this.textContent='יוצר קישור…';call('adminAction',[BOOT.admin,'payComboCreate',{token:payCb.t,slots:[A,B],counts:[na,nb],week:week}],setState);};}
   var ip=$('impPrev');if(ip)ip.onclick=function(){impFrom=$('impFrom').value||impFrom;ip.textContent='מושך מ-Morning…';call('adminAction',[BOOT.admin,'payImport',{from:impFrom,week:week}],setState);};
   var ig=$('impGo');if(ig)ig.onclick=function(){if(!ig.dataset.c){ig.dataset.c='1';ig.textContent='בטוח? להוסיף';return;}var pick={};document.querySelectorAll('[data-imps]').forEach(function(x){if(x.value)pick[x.dataset.imps]=x.value;});
     call('adminAction',[BOOT.admin,'payImport',{from:ig.dataset.from,apply:true,pick:pick,week:week}],function(r){setState(r);toast('התלמידים נוספו');});};
