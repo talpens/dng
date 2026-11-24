@@ -407,7 +407,7 @@ function adminState_(D, adminKey, weekOff, month) {
   });
   const students = D.stu.filter(s => s.status === 'approved').map(s => ({ token: s.token, name: s.name, phone: s.phone, slot: s.slot, bonus: +s.bonus || 0, credits: credits_(D, s.token) }))
     .sort((a, b) => a.name.localeCompare(b.name, 'he'));
-  const invites = D.inv.slice(-30).reverse().map(i => ({ token: i.token, label: i.label, slot: i.slot, used: !!byTok[i.token], link: (D.set.APP_URL || url) ? (D.set.APP_URL || url) + '?t=' + i.token : '' }));
+  const invites = D.inv.slice(-200).reverse().map(i => ({ token: i.token, label: i.label, slot: i.slot, grp: i.slot || ((D.stu.find(x => x.token === i.token) || {}).slot || ''), used: !!byTok[i.token], link: (D.set.APP_URL || url) ? (D.set.APP_URL || url) + '?t=' + i.token : '' }));
   const base = D.set.APP_URL || url;
   const workshops = D.ws.slice().sort(wsSort_).filter(w => !wsEnded_(w) || w.date >= addDays_(ilNow_().date, -14)).map(w => Object.assign(wsPub_(D, w, ''), {
     status: w.status, link: base ? base + '?w=' + w.id : '',

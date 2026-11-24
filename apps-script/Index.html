@@ -52,6 +52,7 @@ h1{font-size:17px;margin:0;font-weight:700;line-height:1.15}h1 span{display:bloc
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--pill);color:var(--pillink);padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:9}
 .toast.on{opacity:1}
 .busy{opacity:.55;pointer-events:none}
+.grp{margin:14px 2px 6px;padding-bottom:4px;border-bottom:1px solid var(--line,#0002);font-size:15px}
 .field textarea{min-height:70px;resize:vertical}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .chk{display:flex;align-items:center;gap:8px;font-size:13px;margin:0 0 10px}
@@ -100,6 +101,12 @@ var SL={},S=null,week=0,tab='',payMonth='',impFrom='',payOv={},payN={},payCb={t:
 var DAYS=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
 function dayName(iso){return DAYS[new Date(iso+'T12:00:00Z').getUTCDay()];}
 function wsWhen(w){return 'יום '+dayName(w.date)+' '+fmtD(w.date)+' · <bdi dir="ltr">'+w.from+'–'+w.to+'</bdi>';}
+function byGroup(list,key,row){ /* כותרת לכל שיעור קבוע, לפי סדר השיעורים; בלי שיעור – בסוף */
+  var out='',ids=S.slots.map(function(x){return x.id;}).concat(['']);
+  ids.forEach(function(id){var L=list.filter(function(x){return (key(x)||'')===id;});if(!L.length)return;
+    out+='<div class="grp"><b>'+(id?esc(slotName(id)):'ללא שיעור קבוע')+'</b> <span class="muted">('+L.length+')</span></div>'+L.map(row).join('');});
+  return out;
+}
 function slotName(id){var s=SL[id];return s?s.day+' '+s.part:'—';}
 function tm(s){return '<bdi dir="ltr">'+s.from+'–'+s.to+'</bdi>';}
 function call(fn,args,ok,fail){
@@ -266,18 +273,18 @@ function adminView(){
   }else if(tab==='pay'){
     body=payView();
   }else if(tab==='stu'){
-    body='<div class="card"><h2>תלמידים ('+S.students.length+')</h2>'+(S.students.length?S.students.map(function(s){
+    body='<div class="card"><h2>תלמידים ('+S.students.length+')</h2>'+(S.students.length?byGroup(S.students,function(s){return s.slot;},function(s){
       return '<div class="li"><div style="flex:1;min-width:140px"><b>'+esc(s.name)+'</b><div class="muted">'+esc(s.phone)+' · יתרה '+s.credits+'</div></div>'+
       '<select class="mini" data-slot="'+s.token+'">'+S.slots.map(function(x){return '<option value="'+x.id+'"'+(x.id===s.slot?' selected':'')+'>'+x.day+' '+x.part+'</option>';}).join('')+'</select>'+
-      '<button class="mini" data-a="bonus" data-t="'+s.token+'" data-d="1">+1</button><button class="mini" data-a="bonus" data-t="'+s.token+'" data-d="-1">−1</button><button class="mini" data-rm="'+s.token+'">הסר</button></div>';}).join(''):'<div class="empty">עוד אין תלמידים</div>')+'</div>';
+      '<button class="mini" data-a="bonus" data-t="'+s.token+'" data-d="1">+1</button><button class="mini" data-a="bonus" data-t="'+s.token+'" data-d="-1">−1</button><button class="mini" data-rm="'+s.token+'">הסר</button></div>';}):'<div class="empty">עוד אין תלמידים</div>')+'</div>';
   }else{
     body='<div class="card"><h2>קישור הרשמה אישי</h2><div class="muted" style="margin-bottom:8px">כל תלמיד/ה מקבל/ת קישור משלו/ה. רק מי שיש לו קישור יכול להירשם.</div>'+
       (S.hasUrl?'':'<div class="notice">צריך קודם לפרסם את האפליקציה (Deploy) כדי שיהיו קישורים.</div>')+
       '<div class="field"><label>שם התלמיד/ה (לזיהוי שלך)</label><input id="invLabel" maxlength="40"></div><div class="field"><label>שיעור קבוע</label><select id="invSlot"><option value="">התלמיד/ה בוחר/ת</option>'+S.slots.map(function(x){return '<option value="'+x.id+'">'+x.day+' '+x.part+' · '+x.from+'</option>';}).join('')+'</select></div><button class="btn pri" id="invNew" style="width:100%">יצירת קישור</button></div>'+
-      '<div class="card"><h2>קישורים אחרונים</h2>'+(S.invites.length?S.invites.map(function(i){var wa='https://wa.me/?text='+encodeURIComponent('היי'+(i.label?' '+i.label:'')+', זה הקישור האישי שלך להרשמה'+(i.slot?' לשיעור הקבוע ב'+slotName(i.slot):' לשיעורים')+' בסטודיו DNG: '+i.link);
+      '<div class="card"><h2>קישורים</h2>'+(S.invites.length?byGroup(S.invites.slice().sort(function(a,b){return (a.label||'').localeCompare(b.label||'','he');}),function(i){return i.grp;},function(i){var wa='https://wa.me/?text='+encodeURIComponent('היי'+(i.label?' '+i.label:'')+', זה הקישור האישי שלך להרשמה'+(i.slot?' לשיעור הקבוע ב'+slotName(i.slot):' לשיעורים')+' בסטודיו DNG: '+i.link);
         return '<div class="req"><div class="row"><b>'+esc(i.label||'ללא שם')+(i.slot?' <span class="tag mine">'+esc(slotName(i.slot))+'</span>':'')+'</b><span class="tag'+(i.used?' ok':'')+'">'+(i.used?'בשימוש':'לא נוצל')+'</span></div>'+
         (i.link?'<input class="link" readonly value="'+esc(i.link)+'" onclick="this.select()">':'')+
-        '<div class="acts">'+(i.link?'<a class="btn ok" style="text-align:center;text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה בוואטסאפ</a>':'<span></span>')+'<button class="btn" data-a="revoke" data-t="'+i.token+'">ביטול קישור</button></div></div>';}).join(''):'<div class="empty">עוד לא נוצרו קישורים</div>')+'</div>';
+        '<div class="acts">'+(i.link?'<a class="btn ok" style="text-align:center;text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה בוואטסאפ</a>':'<span></span>')+'<button class="btn" data-a="revoke" data-t="'+i.token+'">ביטול קישור</button></div></div>';}):'<div class="empty">עוד לא נוצרו קישורים</div>')+'</div>';
   }
   return tabs+body;
 }
