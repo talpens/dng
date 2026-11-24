@@ -25,6 +25,7 @@ const SHEETS = {
   Subs:      ['lessonKey', 'teacherId', 'createdAt'],
   GroupLinks: ['month', 'slot', 'lessons', 'price', 'linkId', 'url', 'desc', 'createdAt'],
   Payments:  ['id', 'month', 'token', 'name', 'phone', 'slot', 'lessons', 'amount', 'status', 'url', 'docId', 'createdAt', 'paidAt'],
+  Trash:     ['id', 'at', 'label', 'items'],
   Settings:  ['key', 'value'],
 };
 
@@ -115,7 +116,7 @@ function doGet(e) {
 
 /* ===================== sheet helpers ===================== */
 const SH_ = {};
-const LAZY_SHEETS = ['Workshops', 'WsSignups', 'Inventory', 'Recipes', 'Teachers', 'Subs', 'Payments', 'GroupLinks'];
+const LAZY_SHEETS = ['Workshops', 'WsSignups', 'Inventory', 'Recipes', 'Teachers', 'Subs', 'Payments', 'GroupLinks', 'Trash'];
 function sh_(n) {
   if (SH_[n]) return SH_[n];
   let s = ss_().getSheetByName(n);
@@ -205,6 +206,7 @@ function addRow_(D, list, obj) {
 }
 function setRow_(D, list, rec, obj) { update_(LIST_SHEET[list], rec, obj); D._dirty = true; }
 function delRow_(D, list, rec) {
+  if (D._tr) { const o = {}; SHEETS[LIST_SHEET[list]].forEach(k => { o[k] = rec[k]; }); D._tr.push({ l: list, o }); } // נשמר ב"נמחקו לאחרונה"
   sh_(LIST_SHEET[list]).deleteRow(rec._row);
   D[list] = D[list].filter(r => r !== rec);
   D[list].forEach(r => { if (r._row > rec._row) r._row--; });
@@ -415,6 +417,7 @@ function adminState_(D, adminKey, weekOff, month) {
   const pendingWs = D.wss.filter(x => x.status === 'pending').map(x => { const w = D.ws.find(y => y.id === x.wsId); return w && !wsEnded_(w) ? { sid: x.sid, name: x.name, phone: x.phone, title: w.title, date: w.date, free: wsFree_(D, w) } : null; }).filter(Boolean);
   const stock = D.stock.map(stockPub_).sort((a, b) => (a.cat || '\uffff').localeCompare(b.cat || '\uffff', 'he') || a.name.localeCompare(b.name, 'he'));
   return { state: 'ok', slots: SLOTS, seats: seats_(D), wk, pendingJoin, pendingMk, pendingWs, week, students, invites, workshops, stock, recipes: D.rec.map(recPub_).sort((a, b) => a.name.localeCompare(b.name, 'he')),
+    trash: rows_('Trash').sort((a, b) => b.at - a.at).slice(0, 20).map(r => ({ id: r.id, at: +r.at, label: r.label })),
     teachers: D.tch.map(t => Object.assign(tchPub_(t), { link: base ? base + '?m=' + t.id : '' })).sort((a, b) => a.name.localeCompare(b.name, 'he')), pay: payState_(D, month), hasUrl: !!url };
 }
 /** הגיליונות שכל פעולת ניהול נוגעת בהם. פעולה לא מוכרת קוראת הכל מחדש. */
@@ -431,12 +434,36 @@ function actLists_(act) {
   if (act.indexOf('pay') === 0) return ['pay', 'grp', 'stu', 'inv', 'can'];
   return null;
 }
+/* ===================== "נמחקו לאחרונה" (התחרטתי) =====================
+ * כל מחיקה בניהול נשמרת בגיליון Trash (שורות שנמחקו, או הסטטוס הקודם של תלמיד שהוסר),
+ * וניתן להחזיר אותה בלחיצה. רשומות נמחקות מעצמן אחרי TRASH_DAYS ימים.
+ */
+const TRASH_ACTS = ['remove', 'revoke', 'wsDelete', 'stockDelete', 'stockRecipeDelete', 'tchDelete', 'payDelete'];
+const TRASH_DAYS = 30, TRASH_KEY = { stu: 'token', inv: 'token', ws: 'id', wss: 'sid', stock: 'id', rec: 'id', tch: 'id', pay: 'id' };
+function trashLog_(items) {
+  if (!items.length) return;
+  const last = items[items.length - 1].o, label = last.name || last.title || last.label || 'פריט';
+  const s = sh_('Trash'), cut = Date.now() - TRASH_DAYS * 86400000;
+  rows_('Trash').filter(r => +r.at < cut).sort((a, b) => b._row - a._row).forEach(r => s.deleteRow(r._row));
+  append_('Trash', { id: randomToken_(10), at: Date.now(), label, items: JSON.stringify(items) });
+}
+function trashUndo_(D, id) {
+  const r = rows_('Trash').find(x => x.id === clean_(id)); if (!r) throw new Error('כבר לא ניתן להחזיר');
+  JSON.parse(r.items).forEach(it => {
+    const key = TRASH_KEY[it.l], cur = D[it.l].find(x => x[key] === it.o[key]);
+    if (it.s !== undefined) { if (cur) setRow_(D, it.l, cur, { status: it.s }); }
+    else if (!cur) addRow_(D, it.l, it.o);
+  });
+  sh_('Trash').deleteRow(r._row);
+}
 function adminAction(adminKey, act, p) {
   p = p || {};
   return withLock_(() => {
     const D = load_(true, actLists_(act)); if (!isAdmin_(D, adminKey)) throw new Error('אין הרשאה');
     const st = p.token ? D.stu.find(s => s.token === clean_(p.token)) : null;
-    if (act === 'approve' && st) setRow_(D, 'stu', st, { status: 'approved', since: weekStart_(0), bonus: st.bonus || '0' });
+    if (TRASH_ACTS.indexOf(act) >= 0) D._tr = [];
+    if (act === 'trashUndo') trashUndo_(D, p.id);
+    else if (act === 'approve' && st) setRow_(D, 'stu', st, { status: 'approved', since: weekStart_(0), bonus: st.bonus || '0' });
     else if (act === 'reject' && st) setRow_(D, 'stu', st, { status: 'rejected' });
     else if ((act === 'mkok' || act === 'mkno') && p.key) {
       const m = D.mk.find(x => x.token === clean_(p.token) && x.lessonKey === p.key);
@@ -453,7 +480,7 @@ function adminAction(adminKey, act, p) {
     }
     else if (act === 'slot' && st && slotById_(p.slot)) setRow_(D, 'stu', st, { slot: p.slot, since: weekStart_(0) });
     else if (act === 'bonus' && st) setRow_(D, 'stu', st, { bonus: (+st.bonus || 0) + (+p.delta || 0) });
-    else if (act === 'remove' && st) setRow_(D, 'stu', st, { status: 'removed' });
+    else if (act === 'remove' && st) { if (D._tr) D._tr.push({ l: 'stu', o: { token: st.token, name: st.name }, s: st.status }); setRow_(D, 'stu', st, { status: 'removed' }); }
     else if (act === 'invite') addRow_(D, 'inv', { token: randomToken_(16), label: String(p.label || '').slice(0, 40), createdAt: Date.now(), slot: slotById_(p.slot) ? p.slot : '' });
     else if (act === 'invRelease' && p.token) {
       // שחרור קישור: מוחקים את התלמיד/ה שתפס/ה אותו, כדי שהקישור יהיה פתוח לשימוש מחדש
@@ -484,6 +511,7 @@ function adminAction(adminKey, act, p) {
     else if (act.indexOf('stock') === 0) stockAction_(D, act, p);
     else if (act.indexOf('tch') === 0) teacherAction_(D, act, p);
     else if (act.indexOf('pay') === 0) payAction_(D, act, p);
+    if (D._tr) { trashLog_(D._tr); delete D._tr; }
     saveCache_(D);
     return adminState_(D, adminKey, p.week || 0, p.month);
   });
