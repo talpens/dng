@@ -247,8 +247,15 @@ function fmtD_(iso) { const p = iso.split('-'); return (+p[2]) + '.' + (+p[1]); 
 
 /* ===================== domain ===================== */
 /** fresh=true: לקרוא מהגיליון (לפני כתיבה). אחרת: מהמטמון אם יש. */
-function load_(fresh) {
+function load_(fresh, lists) {
   let ver = null;
+  if (fresh && lists) { // פעולה שכותבת: מהמטמון, ורק הגיליונות שהפעולה נוגעת בהם נקראים מחדש (במקום כל 13)
+    const hit = cacheGet_();
+    if (hit && hit.ws && hit.wss && hit.stock && hit.rec && hit.tch && hit.sub && hit.pay && hit.grp) {
+      lists.forEach(l => { hit[l] = rows_(LIST_SHEET[l]); });
+      return hit;
+    }
+  }
   if (!fresh) {
     const hit = cacheGet_(); if (hit && hit.ws && hit.wss && hit.stock && hit.rec && hit.tch && hit.sub && hit.pay && hit.grp) return hit;
     try { ver = cacheVer_(CacheService.getScriptCache()); } catch (e) {}
@@ -410,10 +417,23 @@ function adminState_(D, adminKey, weekOff, month) {
   return { state: 'ok', slots: SLOTS, seats: seats_(D), wk, pendingJoin, pendingMk, pendingWs, week, students, invites, workshops, stock, recipes: D.rec.map(recPub_).sort((a, b) => a.name.localeCompare(b.name, 'he')),
     teachers: D.tch.map(tchPub_).sort((a, b) => a.name.localeCompare(b.name, 'he')), pay: payState_(D, month), hasUrl: !!url };
 }
+/** הגיליונות שכל פעולת ניהול נוגעת בהם. פעולה לא מוכרת קוראת הכל מחדש. */
+function actLists_(act) {
+  if (/^(approve|reject|slot|bonus|remove)$/.test(act)) return ['stu'];
+  if (/^mk(ok|no)$/.test(act)) return ['mk'];
+  if (act === 'absence') return ['abs', 'stu'];
+  if (act === 'cancel') return ['can'];
+  if (act === 'invite' || act === 'revoke') return ['inv'];
+  if (act.indexOf('ws') === 0) return ['ws', 'wss'];
+  if (act.indexOf('stock') === 0) return ['stock', 'rec'];
+  if (act.indexOf('tch') === 0) return ['tch', 'sub'];
+  if (act.indexOf('pay') === 0) return ['pay', 'grp', 'stu', 'inv', 'can'];
+  return null;
+}
 function adminAction(adminKey, act, p) {
   p = p || {};
   return withLock_(() => {
-    const D = load_(true); if (!isAdmin_(D, adminKey)) throw new Error('אין הרשאה');
+    const D = load_(true, actLists_(act)); if (!isAdmin_(D, adminKey)) throw new Error('אין הרשאה');
     const st = p.token ? D.stu.find(s => s.token === clean_(p.token)) : null;
     if (act === 'approve' && st) setRow_(D, 'stu', st, { status: 'approved', since: weekStart_(0), bonus: st.bonus || '0' });
     else if (act === 'reject' && st) setRow_(D, 'stu', st, { status: 'rejected' });

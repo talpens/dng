@@ -102,12 +102,12 @@ function dayName(iso){return DAYS[new Date(iso+'T12:00:00Z').getUTCDay()];}
 function wsWhen(w){return 'יום '+dayName(w.date)+' '+fmtD(w.date)+' · <bdi dir="ltr">'+w.from+'–'+w.to+'</bdi>';}
 function slotName(id){var s=SL[id];return s?s.day+' '+s.part:'—';}
 function tm(s){return '<bdi dir="ltr">'+s.from+'–'+s.to+'</bdi>';}
-function call(fn,args,ok){
+function call(fn,args,ok,fail){
   if(payMonth&&fn==='adminState'&&!args[2])args[2]=payMonth;
   if(payMonth&&fn==='adminAction'&&args[2]&&!args[2].month)args[2].month=payMonth;
   $('app').classList.add('busy');
   var r=google.script.run.withSuccessHandler(function(res){$('app').classList.remove('busy');ok(res);})
-    .withFailureHandler(function(e){$('app').classList.remove('busy');toast((e&&e.message||'שגיאה').replace(/^Error:\s*/,''));});
+    .withFailureHandler(function(e){$('app').classList.remove('busy');toast((e&&e.message||'שגיאה').replace(/^Error:\s*/,''));if(fail)fail();});
   r[fn].apply(r,args);
 }
 function setState(st){S=st;if(st&&st.slots)st.slots.forEach(function(s){SL[s.id]=s;});render();}
@@ -542,7 +542,7 @@ function bindAdmin(){
   document.querySelectorAll('[data-sub]').forEach(function(s){s.onchange=function(){act('tchSub',{key:s.dataset.sub,teacherId:s.value});};});
   if(tab==='tch')bindTeachers(act);
   if(tab==='pay')bindPay(act);
-  document.querySelectorAll('[data-rm]').forEach(function(b){b.onclick=function(){if(b.dataset.c){act('remove',{token:b.dataset.rm});}else{b.dataset.c='1';b.textContent='בטוח?';setTimeout(function(){if(b.isConnected){delete b.dataset.c;b.textContent='הסר';}},3000);}};});
+  document.querySelectorAll('[data-rm]').forEach(function(b){b.onclick=function(){if(b.dataset.c){var rt=b.dataset.rm;S.students=S.students.filter(function(x){return x.token!==rt;});render();call('adminAction',[K,'remove',{token:rt,week:week}],setState,function(){call('adminState',[K,week],setState);});}else{b.dataset.c='1';b.textContent='בטוח?';setTimeout(function(){if(b.isConnected){delete b.dataset.c;b.textContent='הסר';}},3000);}};});
   document.querySelectorAll('[data-ws]').forEach(function(b){b.onclick=function(){act(b.dataset.ws,{sid:b.dataset.sid,id:b.dataset.id});};});
   document.querySelectorAll('[data-wsed]').forEach(function(b){b.onclick=function(){wsEdit=b.dataset.wsed;wsCopy=null;render();window.scrollTo(0,0);};});
   document.querySelectorAll('[data-wscp]').forEach(function(b){b.onclick=function(){var w=S.workshops.filter(function(x){return x.id===b.dataset.wscp;})[0];
