@@ -72,6 +72,10 @@ h1{font-size:17px;margin:0;font-weight:700;line-height:1.15}h1 span{display:bloc
 .prev .li{font-size:13px}.short{color:#b4491a;font-weight:600}
 .rrow{display:grid;grid-template-columns:1fr 84px 34px;gap:6px;margin:0 0 6px}
 .rrow select,.rrow input{border:1px solid var(--hair);border-radius:10px;padding:9px 8px;font:14px 'IBM Plex Sans Hebrew',sans-serif;background:var(--card2);color:var(--ink);width:100%}
+.teach{font-size:12px;color:var(--mid);margin-top:2px}.teach b{color:var(--ink);font-weight:500}
+.chip{border:1px solid var(--hair);background:var(--card2);color:var(--ink);border-radius:999px;padding:6px 11px;font-size:12px;margin:3px 0 0 4px}
+.chip.on{background:var(--ink);color:var(--pillink);border-color:var(--ink)}
+.sub{border:1px solid var(--hair);border-radius:999px;padding:5px 8px;font:12px 'IBM Plex Sans Hebrew',sans-serif;background:var(--card2);color:var(--ink);max-width:190px}
 .cat{font-size:12px;font-weight:600;color:var(--mid);margin:12px 2px 2px}.cat:first-child{margin-top:0}
 </style>
 </head>
@@ -85,7 +89,7 @@ var $=function(id){return document.getElementById(id);};
 function esc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function toast(m){var t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(function(){t.classList.remove('on');},2200);}
 function fmtD(iso){var p=iso.split('-');return (+p[2])+'.'+(+p[1]);}
-var SL={},S=null,week=0,tab='',ADMIN=!!BOOT.admin,wsEdit='',wsCopy=null,stEdit='',stForm=false,stPend={},stBusy=0,rcEdit='',rcRows=[],rcPrev={};
+var SL={},S=null,week=0,tab='',ADMIN=!!BOOT.admin,tcEdit='',wsEdit='',wsCopy=null,stEdit='',stForm=false,stPend={},stBusy=0,rcEdit='',rcRows=[],rcPrev={};
 var DAYS=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
 function dayName(iso){return DAYS[new Date(iso+'T12:00:00Z').getUTCDay()];}
 function wsWhen(w){return 'יום '+dayName(w.date)+' '+fmtD(w.date)+' · <bdi dir="ltr">'+w.from+'–'+w.to+'</bdi>';}
@@ -132,7 +136,7 @@ function studentView(){
     else if(l.mk==='no')tag='<span class="tag off">השלמה לא אושרה</span>';
     else if(l.mk==='pending'){tag='<span class="tag wait">ממתין לאישור</span>';if(!l.started)act='<button class="mini" data-unmk="'+l.key+'">ביטול בקשה</button>';}
     else if(!l.started&&l.free>0&&avail>0)act='<button class="btn sm pri" data-mk="'+l.key+'">בקשת השלמה</button>';
-    return {k:k,h:'<div class="card lesson'+(l.ended?' past':'')+(l.cancelled?' cancelled':'')+'"><div class="top"><div><div class="day">'+s.day+' '+s.part+'</div><div class="when">'+fmtD(l.date)+' · '+tm(s)+'</div></div>'+
+    return {k:k,h:'<div class="card lesson'+(l.ended?' past':'')+(l.cancelled?' cancelled':'')+'"><div class="top"><div><div class="day">'+s.day+' '+s.part+'</div><div class="when">'+fmtD(l.date)+' · '+tm(s)+'</div>'+(l.teacher&&!l.cancelled?'<div class="teach">מורה: <b>'+esc(l.teacher)+'</b></div>':'')+'</div>'+
       '<div class="seats"><b>'+(l.cancelled?'—':l.free)+'</b><small>'+(l.cancelled?'':'מקומות פנויים')+'</small></div></div>'+
       '<div class="row" style="margin-top:10px"><div>'+tag+'</div><div>'+(l.ended&&!tag?'<span class="muted">הסתיים</span>':act)+'</div></div></div>'};});
   // סדנאות מופיעות בתוך המערכת השבועית, ביום שלהן
@@ -196,7 +200,7 @@ function adminView(){
   $('who').innerHTML='<b>מצב ניהול</b>';
   var pw=S.pendingWs||[],n=S.pendingJoin.length+S.pendingMk.length+pw.length;if(!tab)tab=n?'req':'week';
   var low=stockLow().length;
-  var tabs='<div class="pills">'+[['req','בקשות'+(n?'<span class="n">'+n+'</span>':'')],['week','השבוע'],['ws','סדנאות'],['stock','מלאי'+(low?'<span class="n">'+low+'</span>':'')],['stu','תלמידים'],['inv','קישורים']].map(function(t){return '<button data-tab="'+t[0]+'" class="'+(tab===t[0]?'on':'')+'">'+t[1]+'</button>';}).join('')+'</div>';
+  var tabs='<div class="pills">'+[['req','בקשות'+(n?'<span class="n">'+n+'</span>':'')],['week','השבוע'],['ws','סדנאות'],['stock','מלאי'+(low?'<span class="n">'+low+'</span>':'')],['stu','תלמידים'],['tch','מורים'],['inv','קישורים']].map(function(t){return '<button data-tab="'+t[0]+'" class="'+(tab===t[0]?'on':'')+'">'+t[1]+'</button>';}).join('')+'</div>';
   var body='';
   if(tab==='req'){
     body='<div class="card"><h2>הרשמות חדשות</h2>'+(S.pendingJoin.length?S.pendingJoin.map(function(r){return '<div class="req"><div class="row"><b>'+esc(r.name)+'</b><span class="muted">'+esc(r.phone)+'</span></div>'+
@@ -217,6 +221,7 @@ function adminView(){
         var coming=l.regs.filter(function(r){return !r.absent;}).length+l.mk.length;
         return '<div class="card lesson'+(l.ended?' past':'')+(l.cancelled?' cancelled':'')+'"><div class="top"><div><div class="day">'+s.day+' '+s.part+'</div><div class="when">'+fmtD(l.date)+' · '+tm(s)+'</div></div>'+
           '<div class="seats"><b>'+(l.cancelled?'—':l.free)+'</b><small>'+(l.cancelled?'בוטל':'פנויים')+'</small></div></div>'+
+          weekTeacher(l)+
           '<div class="muted" style="margin:6px 0 2px">'+coming+' מגיעים מתוך '+S.seats+'</div><div>'+(li||'<div class="empty">אין תלמידים</div>')+'</div>'+
           '<div class="row" style="margin-top:8px"><span></span><button class="btn sm" data-a="cancel" data-k="'+l.key+'">'+(l.cancelled?'החזר שיעור':'בטל שיעור')+'</button></div></div>';}).join('');
   }else if(tab==='ws'){
@@ -247,6 +252,8 @@ function adminView(){
           '<button class="btn" data-wsed="'+w.id+'">עריכה</button><button class="btn" data-wscp="'+w.id+'">שכפול לתאריך אחר</button><button class="btn" data-wsdel="'+w.id+'">מחיקה</button></div></div>';}).join(''):'<div class="card"><div class="empty">עוד אין סדנאות</div></div>');
   }else if(tab==='stock'){
     body=stockView();
+  }else if(tab==='tch'){
+    body=teachersView();
   }else if(tab==='stu'){
     body='<div class="card"><h2>תלמידים ('+S.students.length+')</h2>'+(S.students.length?S.students.map(function(s){
       return '<div class="li"><div style="flex:1;min-width:140px"><b>'+esc(s.name)+'</b><div class="muted">'+esc(s.phone)+' · יתרה '+s.credits+'</div></div>'+
@@ -262,6 +269,37 @@ function adminView(){
         '<div class="acts">'+(i.link?'<a class="btn ok" style="text-align:center;text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה בוואטסאפ</a>':'<span></span>')+'<button class="btn" data-a="revoke" data-t="'+i.token+'">ביטול קישור</button></div></div>';}).join(''):'<div class="empty">עוד לא נוצרו קישורים</div>')+'</div>';
   }
   return tabs+body;
+}
+/* ---------------- teachers (מורים) ---------------- */
+function weekTeacher(l){
+  var T=S.teachers||[];if(!T.length)return '';
+  var opts='<option value="">'+(l.regular?'קבוע: '+esc(l.regular):'אין מורה קבוע')+'</option>'+T.map(function(t){return '<option value="'+t.id+'"'+(t.id===l.sub?' selected':'')+'>מחליף/ה: '+esc(t.name)+'</option>';}).join('');
+  return '<div class="row" style="margin-top:8px"><span class="teach">מורה: <b>'+esc(l.teacher||'—')+'</b>'+(l.sub?' <span class="tag wait">מחליף/ה</span>':'')+'</span>'+
+    (l.ended?'':'<select class="sub" data-sub="'+l.key+'" aria-label="מחליף לשיעור הזה">'+opts+'</select>')+'</div>';
+}
+function teachersView(){
+  var T=S.teachers||[],e=tcEdit&&tcEdit!=='new'?(T.filter(function(t){return t.id===tcEdit;})[0]||{}):{};
+  var grid='<div class="card"><h2>מי מלמד באיזה שיעור</h2><div class="muted" style="margin-bottom:6px">לוחצים על שם כדי לשבץ או להוריד. אפשר כמה מורים באותו שיעור. מחליף לשיעור אחד בוחרים בלשונית "השבוע".</div>'+
+    S.slots.map(function(s){return '<div class="li" style="display:block"><div class="row"><b>'+s.day+' '+s.part+'</b><span class="when">'+tm(s)+'</span></div><div>'+
+      (T.length?T.map(function(t){var on=t.slots.indexOf(s.id)>=0;return '<button class="chip'+(on?' on':'')+'" data-tsl="'+s.id+'" data-tid="'+t.id+'" data-on="'+(on?0:1)+'">'+(on?'✓ ':'')+esc(t.name)+'</button>';}).join(''):'<span class="muted">קודם מוסיפים מורה</span>')+'</div></div>';}).join('')+'</div>';
+  var form=tcEdit?'<div class="card" id="tcForm"><h2>'+(tcEdit==='new'?'מורה חדש/ה':'עריכת מורה')+'</h2>'+
+      '<div class="field"><label>שם</label><input id="tcName" maxlength="40" value="'+esc(e.name||'')+'"></div>'+
+      '<div class="field"><label>טלפון (לא חובה)</label><input id="tcPhone" inputmode="tel" maxlength="20" value="'+esc(e.phone||'')+'"></div>'+
+      '<div class="acts"><button class="btn pri" id="tcSave">'+(tcEdit==='new'?'הוספה':'שמירה')+'</button><button class="btn" id="tcCancel">ביטול</button>'+(tcEdit!=='new'?'<button class="btn" id="tcDel">מחיקת המורה</button>':'')+'</div></div>'
+    :'<button class="btn pri" id="tcNew" style="width:100%;margin:0 0 10px">+ הוספת מורה</button>';
+  var list='<div class="card"><h2>מורים ('+T.length+')</h2>'+(T.length?T.map(function(t){
+    return '<div class="li"><div style="flex:1;min-width:140px"><b>'+esc(t.name)+'</b><div class="muted">'+(t.phone?esc(t.phone)+' · ':'')+(t.slots.length?t.slots.map(slotName).join(', '):'בלי שיעור קבוע')+'</div></div><button class="mini" data-tced="'+t.id+'">עריכה</button></div>';}).join(''):'<div class="empty">עוד אין מורים</div>')+'</div>';
+  return grid+form+list;
+}
+function bindTeachers(act){
+  document.querySelectorAll('[data-tsl]').forEach(function(b){b.onclick=function(){act('tchSlot',{id:b.dataset.tid,slot:b.dataset.tsl,on:b.dataset.on==='1'});};});
+  document.querySelectorAll('[data-tced]').forEach(function(b){b.onclick=function(){tcEdit=b.dataset.tced;render();$('tcForm').scrollIntoView();};});
+  var n=$('tcNew');if(n)n.onclick=function(){tcEdit='new';render();$('tcName').focus();};
+  var c=$('tcCancel');if(c)c.onclick=function(){tcEdit='';render();};
+  var sv=$('tcSave');if(sv)sv.onclick=function(){var f={id:tcEdit==='new'?'':tcEdit,name:$('tcName').value,phone:$('tcPhone').value,week:week};
+    if(!f.name.trim()){toast('צריך שם');return;}var was=tcEdit!=='new';
+    call('adminAction',[BOOT.admin,'tchSave',f],function(r){tcEdit='';setState(r);toast(was?'נשמר':'המורה נוסף/ה');});};
+  var d=$('tcDel');if(d)d.onclick=function(){if(d.dataset.c){call('adminAction',[BOOT.admin,'tchDelete',{id:tcEdit,week:week}],function(r){tcEdit='';setState(r);toast('המורה נמחק/ה');});}else{d.dataset.c='1';d.textContent='בטוח למחוק?';setTimeout(function(){if(d.isConnected){delete d.dataset.c;d.textContent='מחיקת המורה';}},3000);}};
 }
 function adminWsWeekCard(w){
   var li=w.signups.map(function(x){return '<div class="li"><span>'+esc(x.name)+'</span>'+(x.status==='pending'?'<span class="tag wait">ממתין</span>':'')+'</div>';}).join('');
@@ -384,6 +422,8 @@ function bindAdmin(){
   document.querySelectorAll('[data-ww]').forEach(function(b){b.onclick=function(){week=+b.dataset.ww;call('adminState',[K,week],setState);};});
   document.querySelectorAll('[data-a]').forEach(function(b){b.onclick=function(){act(b.dataset.a,{token:b.dataset.t,key:b.dataset.k,on:b.dataset.on==='1',delta:+b.dataset.d||0});};});
   document.querySelectorAll('[data-slot]').forEach(function(s){s.onchange=function(){act('slot',{token:s.dataset.slot,slot:s.value});};});
+  document.querySelectorAll('[data-sub]').forEach(function(s){s.onchange=function(){act('tchSub',{key:s.dataset.sub,teacherId:s.value});};});
+  if(tab==='tch')bindTeachers(act);
   document.querySelectorAll('[data-rm]').forEach(function(b){b.onclick=function(){if(b.dataset.c){act('remove',{token:b.dataset.rm});}else{b.dataset.c='1';b.textContent='בטוח?';setTimeout(function(){if(b.isConnected){delete b.dataset.c;b.textContent='הסר';}},3000);}};});
   document.querySelectorAll('[data-ws]').forEach(function(b){b.onclick=function(){act(b.dataset.ws,{sid:b.dataset.sid,id:b.dataset.id});};});
   document.querySelectorAll('[data-wsed]').forEach(function(b){b.onclick=function(){wsEdit=b.dataset.wsed;wsCopy=null;render();window.scrollTo(0,0);};});

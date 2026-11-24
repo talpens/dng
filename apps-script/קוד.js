@@ -21,6 +21,8 @@ const SHEETS = {
   WsSignups: ['wsId', 'sid', 'token', 'name', 'phone', 'status', 'createdAt'],
   Inventory: ['id', 'name', 'qty', 'min', 'unit', 'cat', 'note', 'updatedAt', 'alerted'],
   Recipes:   ['id', 'name', 'parts', 'note', 'createdAt', 'lastMade', 'lastKg'],
+  Teachers:  ['id', 'name', 'phone', 'slots', 'createdAt'],
+  Subs:      ['lessonKey', 'teacherId', 'createdAt'],
   Settings:  ['key', 'value'],
 };
 
@@ -45,13 +47,14 @@ function openSs_() {
 function setup() {
   const ss = ss_();
   Object.keys(SHEETS).forEach(name => {
-    let s = ss.getSheetByName(name);
+    let s = ss.getSheetByName(name), isNew = !s;
     if (!s) s = ss.insertSheet(name);
     const h = SHEETS[name];
     s.getRange(1, 1, s.getMaxRows(), h.length).setNumberFormat('@');
     s.getRange(1, 1, 1, h.length).setValues([h]).setFontWeight('bold');
     s.setFrozenRows(1);
     s.setTabColor(name === 'Settings' ? '#e8742b' : '#161616');
+    if (isNew && name === 'Teachers') seedTeachers_();
   });
   const st = settings_();
   if (!st.ADMIN_KEY) setSetting_('ADMIN_KEY', randomToken_(24));
@@ -110,7 +113,7 @@ function doGet(e) {
 
 /* ===================== sheet helpers ===================== */
 const SH_ = {};
-const LAZY_SHEETS = ['Workshops', 'WsSignups', 'Inventory', 'Recipes'];
+const LAZY_SHEETS = ['Workshops', 'WsSignups', 'Inventory', 'Recipes', 'Teachers', 'Subs'];
 function sh_(n) {
   if (SH_[n]) return SH_[n];
   let s = ss_().getSheetByName(n);
@@ -118,6 +121,8 @@ function sh_(n) {
     s = ss_().insertSheet(n); const h = SHEETS[n];
     s.getRange(1, 1, s.getMaxRows(), h.length).setNumberFormat('@');
     s.getRange(1, 1, 1, h.length).setValues([h]).setFontWeight('bold'); s.setFrozenRows(1); s.setTabColor('#161616');
+    SH_[n] = s;
+    if (n === 'Teachers') seedTeachers_();
   }
   return SH_[n] = s;
 }
@@ -159,7 +164,7 @@ function setSetting_(k, v) {
  *  - שינוי ידני בגיליון מופיע באפליקציה תוך CACHE_TTL שניות לכל היותר
  *    (או מיד, עם תפריט "סטודיו DNG ← רענון נתונים" / הפונקציה clearCache).
  */
-const CACHE_TTL = 300, CACHE_CHUNK = 90000, LIST_SHEET = { stu: 'Students', inv: 'Invites', abs: 'Absences', mk: 'Makeups', can: 'Cancelled', ws: 'Workshops', wss: 'WsSignups', stock: 'Inventory', rec: 'Recipes' };
+const CACHE_TTL = 300, CACHE_CHUNK = 90000, LIST_SHEET = { stu: 'Students', inv: 'Invites', abs: 'Absences', mk: 'Makeups', can: 'Cancelled', ws: 'Workshops', wss: 'WsSignups', stock: 'Inventory', rec: 'Recipes', tch: 'Teachers', sub: 'Subs' };
 function cacheVer_(c) { return c.get('dver') || '0'; }
 function cacheGet_() {
   try {
@@ -243,12 +248,12 @@ function fmtD_(iso) { const p = iso.split('-'); return (+p[2]) + '.' + (+p[1]); 
 function load_(fresh) {
   let ver = null;
   if (!fresh) {
-    const hit = cacheGet_(); if (hit && hit.ws && hit.wss && hit.stock && hit.rec) return hit;
+    const hit = cacheGet_(); if (hit && hit.ws && hit.wss && hit.stock && hit.rec && hit.tch && hit.sub) return hit;
     try { ver = cacheVer_(CacheService.getScriptCache()); } catch (e) {}
   }
   const D = {
     stu: rows_('Students'), inv: rows_('Invites'), abs: rows_('Absences'), mk: rows_('Makeups'),
-    can: rows_('Cancelled'), ws: rows_('Workshops'), wss: rows_('WsSignups'), stock: rows_('Inventory'), rec: rows_('Recipes'), set: settings_(),
+    can: rows_('Cancelled'), ws: rows_('Workshops'), wss: rows_('WsSignups'), stock: rows_('Inventory'), rec: rows_('Recipes'), tch: rows_('Teachers'), sub: rows_('Subs'), set: settings_(),
   };
   if (fresh) bumpCache_();
   cachePut_(D, fresh ? null : ver);
@@ -303,7 +308,7 @@ function studentState_(D, token) {
       return { key, slot: s.id, date: L.date, free: S.free, cancelled: S.cancelled,
         mine: s.id === st.slot && st.since <= L.date,
         absent: D.abs.some(a => a.token === token && a.lessonKey === key),
-        mk: m ? m.status : '', started: started_(key), ended: ended_(key), absLate: absLate_(key), absBy: absDeadline_(key).txt };
+        mk: m ? m.status : '', teacher: teacherNames_(D, key), started: started_(key), ended: ended_(key), absLate: absLate_(key), absBy: absDeadline_(key).txt };
     }) };
   });
   return Object.assign(base, { state: 'ok', me: { name: st.name, slot: st.slot }, credits: credits_(D, token), pendingMk: pendingMkCount_(D, token), weeks,
@@ -385,7 +390,9 @@ function adminState_(D, adminKey, weekOff) {
   const wk = weekStart_(weekOff || 0);
   const week = SLOTS.map(s => {
     const key = wk + '_' + s.id, S = seat_(D, key);
+    const sub = D.sub.find(x => x.lessonKey === key);
     return { key, slot: s.id, date: lesson_(key).date, free: S.free, cancelled: S.cancelled, ended: ended_(key),
+      teacher: teacherNames_(D, key), regular: tchNames_(regularTeachers_(D, s.id)), sub: sub ? sub.teacherId : '',
       regs: S.regs.map(r => ({ token: r.token, name: r.name, absent: S.absent.some(a => a.token === r.token) })),
       mk: S.mkOk.map(m => ({ token: m.token, name: nm(m.token) })) };
   });
@@ -398,7 +405,8 @@ function adminState_(D, adminKey, weekOff) {
     signups: D.wss.filter(x => x.wsId === w.id && x.status !== 'no').map(x => ({ sid: x.sid, name: x.name, phone: x.phone, status: x.status, student: !!x.token })) }));
   const pendingWs = D.wss.filter(x => x.status === 'pending').map(x => { const w = D.ws.find(y => y.id === x.wsId); return w && !wsEnded_(w) ? { sid: x.sid, name: x.name, phone: x.phone, title: w.title, date: w.date, free: wsFree_(D, w) } : null; }).filter(Boolean);
   const stock = D.stock.map(stockPub_).sort((a, b) => (a.cat || '\uffff').localeCompare(b.cat || '\uffff', 'he') || a.name.localeCompare(b.name, 'he'));
-  return { state: 'ok', slots: SLOTS, seats: seats_(D), wk, pendingJoin, pendingMk, pendingWs, week, students, invites, workshops, stock, recipes: D.rec.map(recPub_).sort((a, b) => a.name.localeCompare(b.name, 'he')), hasUrl: !!url };
+  return { state: 'ok', slots: SLOTS, seats: seats_(D), wk, pendingJoin, pendingMk, pendingWs, week, students, invites, workshops, stock, recipes: D.rec.map(recPub_).sort((a, b) => a.name.localeCompare(b.name, 'he')),
+    teachers: D.tch.map(tchPub_).sort((a, b) => a.name.localeCompare(b.name, 'he')), hasUrl: !!url };
 }
 function adminAction(adminKey, act, p) {
   p = p || {};
@@ -444,6 +452,7 @@ function adminAction(adminKey, act, p) {
       if (w && name) addRow_(D, 'wss', { wsId: w.id, sid: randomToken_(12), token: '', name, phone: String(p.phone || '').trim().slice(0, 20), status: 'ok', createdAt: Date.now() });
     }
     else if (act.indexOf('stock') === 0) stockAction_(D, act, p);
+    else if (act.indexOf('tch') === 0) teacherAction_(D, act, p);
     saveCache_(D);
     return adminState_(D, adminKey, p.week || 0);
   });
@@ -603,6 +612,57 @@ function stockAction_(D, act, p) {
     const list = stockOrderList_(D);
     if (!list) throw new Error('אין כרגע מה להזמין');
     notify_(D, 'מלאי: רשימת הזמנה', 'צריך להזמין:\n' + list, 'למלאי');
+  }
+}
+
+/* ===================== teachers (מורים) =====================
+ * כל מורה: שם, טלפון (לא חובה) והשיעורים הקבועים שלו (Teachers.slots, רשימת slot ids מופרדת בפסיק).
+ * לשיעור יכולים להיות כמה מורים. מחליף חד-פעמי לשיעור מסוים נשמר ב-Subs (lessonKey → teacherId)
+ * ובא במקום המורים הקבועים של אותו שיעור בלבד.
+ */
+const TEACHERS_SEED = [ // נכנס פעם אחת, כשגיליון Teachers נוצר. אחר כך משנים מעמוד הניהול.
+  { name: 'תאיר', slots: ['sun-am', 'wed-pm'] },
+  { name: 'דורון נעמה גלפר', slots: ['sun-pm', 'tue-pm', 'wed-am'] },
+];
+function seedTeachers_() {
+  if (sh_('Teachers').getLastRow() > 1) return;
+  TEACHERS_SEED.forEach(t => append_('Teachers', { id: randomToken_(10), name: t.name, phone: '', slots: t.slots.join(','), createdAt: Date.now() }));
+}
+function tchSlots_(t) { return String(t.slots || '').split(',').filter(id => slotById_(id)); }
+function tchPub_(t) { return { id: t.id, name: t.name, phone: t.phone, slots: tchSlots_(t) }; }
+function tchNames_(list) { return list.map(t => t.name).join(' ו'); }
+function regularTeachers_(D, slotId) { return D.tch.filter(t => tchSlots_(t).indexOf(slotId) >= 0); }
+/** מי מלמד בשיעור הזה: המחליף אם יש, אחרת המורים הקבועים. */
+function teachersOf_(D, key) {
+  const sub = D.sub.find(x => x.lessonKey === key), t = sub && D.tch.find(x => x.id === sub.teacherId);
+  if (t) return [t];
+  const L = lesson_(key); return L.s ? regularTeachers_(D, L.s.id) : [];
+}
+function teacherNames_(D, key) { return tchNames_(teachersOf_(D, key)); }
+function teacherAction_(D, act, p) {
+  const t = p.id ? D.tch.find(x => x.id === clean_(p.id)) : null;
+  if (act === 'tchSave') {
+    const name = String(p.name || '').trim().slice(0, 40), phone = String(p.phone || '').trim().slice(0, 20);
+    if (!name) throw new Error('צריך שם למורה');
+    if (D.tch.some(x => x !== t && x.name === name)) throw new Error('כבר יש מורה בשם הזה');
+    if (t) setRow_(D, 'tch', t, { name, phone });
+    else addRow_(D, 'tch', { id: randomToken_(10), name, phone, slots: (Array.isArray(p.slots) ? p.slots : []).filter(id => slotById_(id)).join(','), createdAt: Date.now() });
+  }
+  else if (act === 'tchSlot' && t && slotById_(p.slot)) {
+    const cur = tchSlots_(t).filter(id => id !== p.slot);
+    if (p.on) cur.push(p.slot);
+    setRow_(D, 'tch', t, { slots: SLOTS.map(s => s.id).filter(id => cur.indexOf(id) >= 0).join(',') });
+  }
+  else if (act === 'tchDelete' && t) {
+    D.sub.filter(x => x.teacherId === t.id).sort((a, b) => b._row - a._row).forEach(x => delRow_(D, 'sub', x));
+    delRow_(D, 'tch', t);
+  }
+  else if (act === 'tchSub' && p.key && lesson_(p.key).s) { // מחליף לשיעור אחד. teacherId ריק = חוזרים למורה הקבוע
+    const ex = D.sub.find(x => x.lessonKey === p.key), tid = clean_(p.teacherId);
+    if (tid && !D.tch.some(x => x.id === tid)) throw new Error('המורה לא נמצא');
+    if (ex && tid) setRow_(D, 'sub', ex, { teacherId: tid, createdAt: Date.now() });
+    else if (ex) delRow_(D, 'sub', ex);
+    else if (tid) addRow_(D, 'sub', { lessonKey: p.key, teacherId: tid, createdAt: Date.now() });
   }
 }
 
