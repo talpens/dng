@@ -102,11 +102,11 @@ function doGet(e) {
   let t;
   try { t = HtmlService.createTemplateFromFile('Index'); }
   catch (err) { t = HtmlService.createTemplateFromFile('Index.html'); }
-  const token = clean_(e.parameter.t), admin = clean_(e.parameter.admin), ws = clean_(e.parameter.w);
+  const token = clean_(e.parameter.t), admin = clean_(e.parameter.admin), ws = clean_(e.parameter.w), tch = clean_(e.parameter.m);
   // המצב הראשון נשלח יחד עם הדף, כדי שלא יהיה עוד סיבוב לשרת אחרי שהדף נטען.
   let state = null;
-  try { state = admin ? adminState(admin, 0) : token ? studentState(token) : ws ? wsPublicState(ws) : null; } catch (err) { console.log('boot state failed: ' + err); }
-  t.boot = JSON.stringify({ token, admin, ws, state }).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+  try { state = admin ? adminState(admin, 0) : token ? studentState(token) : tch ? teacherState(tch) : ws ? wsPublicState(ws) : null; } catch (err) { console.log('boot state failed: ' + err); }
+  t.boot = JSON.stringify({ token, admin, ws, tch, state }).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   return t.evaluate()
     .setTitle('שיעורים – סטודיו DNG')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -415,7 +415,7 @@ function adminState_(D, adminKey, weekOff, month) {
   const pendingWs = D.wss.filter(x => x.status === 'pending').map(x => { const w = D.ws.find(y => y.id === x.wsId); return w && !wsEnded_(w) ? { sid: x.sid, name: x.name, phone: x.phone, title: w.title, date: w.date, free: wsFree_(D, w) } : null; }).filter(Boolean);
   const stock = D.stock.map(stockPub_).sort((a, b) => (a.cat || '\uffff').localeCompare(b.cat || '\uffff', 'he') || a.name.localeCompare(b.name, 'he'));
   return { state: 'ok', slots: SLOTS, seats: seats_(D), wk, pendingJoin, pendingMk, pendingWs, week, students, invites, workshops, stock, recipes: D.rec.map(recPub_).sort((a, b) => a.name.localeCompare(b.name, 'he')),
-    teachers: D.tch.map(tchPub_).sort((a, b) => a.name.localeCompare(b.name, 'he')), pay: payState_(D, month), hasUrl: !!url };
+    teachers: D.tch.map(t => Object.assign(tchPub_(t), { link: base ? base + '?m=' + t.id : '' })).sort((a, b) => a.name.localeCompare(b.name, 'he')), pay: payState_(D, month), hasUrl: !!url };
 }
 /** הגיליונות שכל פעולת ניהול נוגעת בהם. פעולה לא מוכרת קוראת הכל מחדש. */
 function actLists_(act) {
@@ -653,6 +653,15 @@ function seedTeachers_() {
 }
 function tchSlots_(t) { return String(t.slots || '').split(',').filter(id => slotById_(id)); }
 function tchPub_(t) { return { id: t.id, name: t.name, phone: t.phone, slots: tchSlots_(t) }; }
+/** דף מורה (?m=<מזהה המורה>): צפייה בלבד בכל הסדנאות. בלי טלפונים של נרשמים ובלי שום פעולה. */
+function teacherState(id) { return teacherState_(load_(), clean_(id)); }
+function teacherState_(D, id) {
+  const t = id && D.tch.find(x => x.id === id);
+  if (!t) return { state: 'tinvalid' };
+  const workshops = D.ws.slice().sort(wsSort_).filter(w => !wsEnded_(w) || w.date >= addDays_(ilNow_().date, -14)).map(w => Object.assign(wsPub_(D, w, ''), {
+    status: w.status, signups: D.wss.filter(x => x.wsId === w.id && x.status !== 'no').map(x => ({ name: x.name, status: x.status })) }));
+  return { state: 'teacher', name: t.name, workshops };
+}
 function tchNames_(list) { return list.map(t => t.name).join(' ו'); }
 function regularTeachers_(D, slotId) { return D.tch.filter(t => tchSlots_(t).indexOf(slotId) >= 0); }
 /** מי מלמד בשיעור הזה: המחליף אם יש, אחרת המורים הקבועים. */
