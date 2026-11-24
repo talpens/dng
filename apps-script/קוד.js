@@ -23,6 +23,7 @@ const SHEETS = {
   Recipes:   ['id', 'name', 'parts', 'note', 'createdAt', 'lastMade', 'lastKg'],
   Teachers:  ['id', 'name', 'phone', 'slots', 'createdAt'],
   Subs:      ['lessonKey', 'teacherId', 'createdAt'],
+  GroupLinks: ['month', 'slot', 'lessons', 'price', 'linkId', 'url', 'desc', 'createdAt'],
   Payments:  ['id', 'month', 'token', 'name', 'phone', 'slot', 'lessons', 'amount', 'status', 'url', 'docId', 'createdAt', 'paidAt'],
   Settings:  ['key', 'value'],
 };
@@ -114,7 +115,7 @@ function doGet(e) {
 
 /* ===================== sheet helpers ===================== */
 const SH_ = {};
-const LAZY_SHEETS = ['Workshops', 'WsSignups', 'Inventory', 'Recipes', 'Teachers', 'Subs', 'Payments'];
+const LAZY_SHEETS = ['Workshops', 'WsSignups', 'Inventory', 'Recipes', 'Teachers', 'Subs', 'Payments', 'GroupLinks'];
 function sh_(n) {
   if (SH_[n]) return SH_[n];
   let s = ss_().getSheetByName(n);
@@ -165,7 +166,7 @@ function setSetting_(k, v) {
  *  - שינוי ידני בגיליון מופיע באפליקציה תוך CACHE_TTL שניות לכל היותר
  *    (או מיד, עם תפריט "סטודיו DNG ← רענון נתונים" / הפונקציה clearCache).
  */
-const CACHE_TTL = 300, CACHE_CHUNK = 90000, LIST_SHEET = { stu: 'Students', inv: 'Invites', abs: 'Absences', mk: 'Makeups', can: 'Cancelled', ws: 'Workshops', wss: 'WsSignups', stock: 'Inventory', rec: 'Recipes', tch: 'Teachers', sub: 'Subs', pay: 'Payments' };
+const CACHE_TTL = 300, CACHE_CHUNK = 90000, LIST_SHEET = { stu: 'Students', inv: 'Invites', abs: 'Absences', mk: 'Makeups', can: 'Cancelled', ws: 'Workshops', wss: 'WsSignups', stock: 'Inventory', rec: 'Recipes', tch: 'Teachers', sub: 'Subs', pay: 'Payments', grp: 'GroupLinks' };
 function cacheVer_(c) { return c.get('dver') || '0'; }
 function cacheGet_() {
   try {
@@ -249,12 +250,12 @@ function fmtD_(iso) { const p = iso.split('-'); return (+p[2]) + '.' + (+p[1]); 
 function load_(fresh) {
   let ver = null;
   if (!fresh) {
-    const hit = cacheGet_(); if (hit && hit.ws && hit.wss && hit.stock && hit.rec && hit.tch && hit.sub && hit.pay) return hit;
+    const hit = cacheGet_(); if (hit && hit.ws && hit.wss && hit.stock && hit.rec && hit.tch && hit.sub && hit.pay && hit.grp) return hit;
     try { ver = cacheVer_(CacheService.getScriptCache()); } catch (e) {}
   }
   const D = {
     stu: rows_('Students'), inv: rows_('Invites'), abs: rows_('Absences'), mk: rows_('Makeups'),
-    can: rows_('Cancelled'), ws: rows_('Workshops'), wss: rows_('WsSignups'), stock: rows_('Inventory'), rec: rows_('Recipes'), tch: rows_('Teachers'), sub: rows_('Subs'), pay: rows_('Payments'), set: settings_(),
+    can: rows_('Cancelled'), ws: rows_('Workshops'), wss: rows_('WsSignups'), stock: rows_('Inventory'), rec: rows_('Recipes'), tch: rows_('Teachers'), sub: rows_('Subs'), pay: rows_('Payments'), grp: rows_('GroupLinks'), set: settings_(),
   };
   if (fresh) bumpCache_();
   cachePut_(D, fresh ? null : ver);
@@ -679,7 +680,7 @@ function setAppUrl() { setSetting_('APP_URL', 'https://talpens.github.io/dng/sit
  * מפתחות ה-API נשמרים רק ב-Script Properties (MORNING_ID / MORNING_SECRET), לא בקוד ולא בגיליון.
  */
 const MONTHS_HE = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
-let PAY_MSG_ = '';
+let PAY_MSG_ = '', PAY_PAID_ = null, PAY_IMPORT_ = null;
 function lessonPrice_(D) { return num_(D.set.LESSON_PRICE) || 180; }
 function monthLabel_(m) { return MONTHS_HE[+m.slice(5, 7) - 1] + ' ' + m.slice(0, 4); }
 function defMonth_() { const n = ilNow_(); return +n.date.slice(8) >= 20 ? addDays_(n.date.slice(0, 8) + '28', 7).slice(0, 7) : n.date.slice(0, 7); }
@@ -706,7 +707,13 @@ function payState_(D, month) {
   });
   D.pay.filter(r => r.month === m && !seen[r.token]).forEach(r => students.push({ token: r.token, name: r.name, phone: r.phone, slot: r.slot, lessons: +r.lessons || 0, gone: true, pay: payPub_(r) }));
   students.sort((a, b) => (a.slot === b.slot ? 0 : SLOTS.findIndex(x => x.id === a.slot) - SLOTS.findIndex(x => x.id === b.slot)) || a.name.localeCompare(b.name, 'he'));
-  return { month: m, label: monthLabel_(m), price: lessonPrice_(D), slots, students, connected: !!(mp.id && mp.secret), sandbox: mp.sandbox, msg };
+  const paid = PAY_PAID_, imp = PAY_IMPORT_; PAY_PAID_ = null; PAY_IMPORT_ = null;
+  const groups = slots.map(s => {
+    const g = D.grp.find(r => r.month === m && r.slot === s.id);
+    return Object.assign({}, s, { members: D.stu.filter(x => x.status === 'approved' && x.slot === s.id).map(x => x.name).sort((a, b) => a.localeCompare(b, 'he')),
+      link: g ? { lessons: +g.lessons || 0, price: num_(g.price), url: g.url, desc: g.desc, createdAt: +g.createdAt || 0 } : null, paid: paid ? (paid[s.id] || []) : null });
+  });
+  return { month: m, label: monthLabel_(m), price: lessonPrice_(D), slots, groups, imp, students, connected: !!(mp.id && mp.secret), sandbox: mp.sandbox, msg };
 }
 function payAction_(D, act, p) {
   const r = p.id ? D.pay.find(x => x.id === clean_(p.id)) : null;
@@ -751,6 +758,83 @@ function payAction_(D, act, p) {
       Utilities.sleep(300); // Morning מגביל לכ-3 בקשות בשנייה
     });
     PAY_MSG_ = (made ? 'נוצרו ' + made + ' קישורים' : 'לא נוצרו קישורים חדשים') + (skip ? ' · ' + skip + ' כבר היו' : '') + (errs.length ? '\nשגיאות:\n' + errs.join('\n') : '');
+  }
+  else if (act === 'payGroupCreate') { // קישור קבוע אחד לכל קבוצה (כל חברי הקבוצה משלמים באותו קישור)
+    const m = validMonth_(p.month), price = lessonPrice_(D), counts = p.counts || {};
+    if (!mProps_().id) throw new Error('קודם מחברים את Morning (מפתח API)');
+    let made = 0, skip = 0; const errs = [];
+    SLOTS.forEach(s => {
+      const n = Math.max(0, Math.min(10, Math.floor(+counts[s.id] || 0))); if (!n) return;
+      const ex = D.grp.find(r => r.month === m && r.slot === s.id), amount = n * price;
+      if (ex && ex.url && +ex.lessons === n && num_(ex.price) === amount) { skip++; return; }
+      const desc = slotName_(s.id) + ' ' + MONTHS_HE[+m.slice(5, 7) - 1] + ' – ' + n + ' שיעורים';
+      try {
+        const L = mCreateGroupLink_(desc, amount);
+        const f = { month: m, slot: s.id, lessons: n, price: amount, linkId: L.id, url: L.url, desc, createdAt: Date.now() };
+        if (ex) setRow_(D, 'grp', ex, f); else addRow_(D, 'grp', f);
+        made++;
+      } catch (e) { errs.push(slotName_(s.id) + ': ' + String(e.message || e).replace(/^Error:\s*/, '')); }
+      Utilities.sleep(300);
+    });
+    PAY_MSG_ = (made ? 'נוצרו ' + made + ' קישורים לקבוצות' : 'לא נוצרו קישורים חדשים') + (skip ? ' · ' + skip + ' כבר היו' : '') + (errs.length ? '\nשגיאות:\n' + errs.join('\n') : '');
+  }
+  else if (act === 'payGroupCheck') { // מי שילם: חשבוניות ב-Morning עם התיאור של קישור הקבוצה
+    const m = validMonth_(p.month), G = D.grp.filter(r => r.month === m && r.desc);
+    if (!G.length) throw new Error('עוד אין קישורים לחודש הזה');
+    const from = Utilities.formatDate(new Date(Math.min.apply(null, G.map(r => +r.createdAt || Date.now())) - 864e5), TZ, 'yyyy-MM-dd'), to = addDays_(ilNow_().date, 1);
+    const docs = [];
+    for (let pg = 1; pg <= 10; pg++) {
+      const d = mFetch_('post', '/documents/search', { fromDate: from, toDate: to, page: pg, pageSize: 100 });
+      (d.items || []).forEach(x => docs.push(x));
+      if (!d.pages || pg >= d.pages) break;
+    }
+    PAY_PAID_ = {};
+    G.forEach(g => {
+      PAY_PAID_[g.slot] = docs.filter(x => x.description === g.desc || (x.income || []).some(i => i.description === g.desc))
+        .map(x => ({ name: (x.client || {}).name || '?', amount: num_(x.amount), date: x.documentDate || '' }));
+    });
+    PAY_MSG_ = 'נבדק מול Morning (' + docs.length + ' חשבוניות מאז שנוצרו הקישורים)';
+  }
+  else if (act === 'payImport') { // מי ששילם בחודש מסוים ב-Morning → תלמידים בקבוצות. apply=false: רק תצוגה מקדימה
+    const m = /^\d{4}-\d{2}$/.test(p.from || '') ? p.from : addDays_(ilNow_().date.slice(0, 8) + '01', -1).slice(0, 7);
+    const last = addDays_(addDays_(m + '-28', 7).slice(0, 8) + '01', -1), docs = [];
+    for (let pg = 1; pg <= 10; pg++) {
+      const d = mFetch_('post', '/documents/search', { fromDate: m + '-01', toDate: last, page: pg, pageSize: 100 });
+      (d.items || []).forEach(x => docs.push(x));
+      if (!d.pages || pg >= d.pages) break;
+    }
+    const digits = x => { let d = String(x || '').replace(/\D/g, ''); if (d.indexOf('972') === 0) d = '0' + d.slice(3); return d; };
+    const norm = x => String(x || '').trim().replace(/\s+/g, ' ');
+    const slotOf = t => { // "אוקטובר שלישי ערב", "השתלמות מקצועית ראשון ערב"... שני ערב עבר לרביעי ערב
+      for (const sl of SLOTS) if (t.indexOf(sl.day + ' ' + sl.part) >= 0) return sl.id;
+      return t.indexOf('שני ערב') >= 0 ? 'wed-pm' : '';
+    };
+    const people = {}, order = [];
+    docs.filter(x => +x.type === 320 || +x.type === 400).forEach(x => {
+      const c = x.client || {}, name = norm(c.name), phone = norm(c.phone), t = String(x.description || '') + ' ' + (x.income || []).map(i => i.description).join(' ');
+      if (!name) return;
+      const k = digits(phone) || name, P0 = people[k] || (order.push(k), people[k] = { name, phone, slot: '', desc: norm(x.description) });
+      if (!P0.slot) P0.slot = slotOf(t); // אותו אדם יכול להופיע פעם בלי קבוצה ופעם עם קבוצה
+      if (!P0.phone && phone) P0.phone = phone;
+    });
+    const add = [], skip = [];
+    order.forEach(k => {
+      const a = people[k];
+      const ex = D.stu.find(s0 => s0.status !== 'removed' && ((digits(a.phone) && digits(s0.phone) === digits(a.phone)) || norm(s0.name) === a.name));
+      if (ex) skip.push({ name: a.name, why: 'כבר באפליקציה (' + slotName_(ex.slot) + ')' });
+      else if (!a.slot && slotById_((p.pick || {})[a.name])) add.push({ name: a.name, phone: a.phone, slot: p.pick[a.name] }); // טל בחר קבוצה ביד
+      else if (!a.slot) skip.push({ name: a.name, why: 'לא ברור לאיזו קבוצה: ' + a.desc.slice(0, 50), unclear: true });
+      else add.push({ name: a.name, phone: a.phone, slot: a.slot });
+    });
+    PAY_IMPORT_ = { month: m, label: monthLabel_(m), add, skip, done: false };
+    if (p.apply) {
+      add.forEach(a => {
+        const token = randomToken_(16);
+        addRow_(D, 'inv', { token, label: a.name, createdAt: Date.now(), slot: a.slot });
+        addRow_(D, 'stu', { token, name: a.name.slice(0, 40), phone: a.phone.slice(0, 20), slot: a.slot, status: 'approved', since: weekStart_(0), bonus: '0', requestedAt: Date.now(), note: 'יובא מ-Morning (' + monthLabel_(m) + ')' });
+      });
+      PAY_IMPORT_.done = true; PAY_MSG_ = 'נוספו ' + add.length + ' תלמידים לקבוצות';
+    }
   }
   else if (act === 'payMark' && r) setRow_(D, 'pay', r, p.paid ? { status: 'paid', paidAt: Date.now() } : { status: 'open', paidAt: '' });
   else if (act === 'payDelete' && r) { if (r.status === 'paid') throw new Error('אי אפשר למחוק תשלום ששולם'); delRow_(D, 'pay', r); }
@@ -829,6 +913,15 @@ function mCreateLink_(D, m, st, n, price, payId) {
   const d = mFetch_('post', '/payments/form', body);
   if (!d.url) throw new Error('Morning לא החזיר קישור');
   return d.url;
+}
+/** קישור תשלום קבוע ב-Morning (כמו "קישור לתשלום" באתר): כמה אנשים יכולים לשלם בו. מחזיר { id, url }. */
+function mCreateGroupLink_(desc, price) {
+  const data = { description: desc, documentVatType: 0, plugins: [], notify: true, addClient: false, maxPayments: 1, maxQuantity: 1, themeId: 1002,
+    openAmount: false, showSearchEngines: false, enablePredefinedPaymentAmounts: false, predefinedPaymentAmounts: [], requireTaxId: false };
+  const d = mFetch_('post', '/payments/links', { type: 0, price, currency: 'ILS', description: desc, themeId: 1002, active: true, showSearchEngines: false, data });
+  const url = d.shortUrl || (d.data || {}).shortUrl || d.url;
+  if (!url) { console.log('payments/links response: ' + JSON.stringify(d).slice(0, 800)); throw new Error('Morning לא החזיר קישור'); }
+  return { id: d.id || '', url };
 }
 /** Morning שולח לכאן הודעה אחרי תשלום (notifyUrl). מסמנים את התשלום כ"שולם". */
 function doPost(e) {

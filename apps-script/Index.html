@@ -96,7 +96,7 @@ var $=function(id){return document.getElementById(id);};
 function esc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function toast(m){var t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(function(){t.classList.remove('on');},2200);}
 function fmtD(iso){var p=iso.split('-');return (+p[2])+'.'+(+p[1]);}
-var SL={},S=null,week=0,tab='',payMonth='',payOv={},payN={},payKeyForm=false,ADMIN=!!BOOT.admin,tcEdit='',wsEdit='',wsCopy=null,stEdit='',stForm=false,stPend={},stBusy=0,rcEdit='',rcRows=[],rcPrev={};
+var SL={},S=null,week=0,tab='',payMonth='',impFrom='',payOv={},payN={},payKeyForm=false,ADMIN=!!BOOT.admin,tcEdit='',wsEdit='',wsCopy=null,stEdit='',stForm=false,stPend={},stBusy=0,rcEdit='',rcRows=[],rcPrev={};
 var DAYS=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
 function dayName(iso){return DAYS[new Date(iso+'T12:00:00Z').getUTCDay()];}
 function wsWhen(w){return 'יום '+dayName(w.date)+' '+fmtD(w.date)+' · <bdi dir="ltr">'+w.from+'–'+w.to+'</bdi>';}
@@ -322,7 +322,8 @@ function adminWsWeekCard(w){
 /* ---------------- payments (תשלומים חודשיים דרך Morning) ---------------- */
 function addMonth(m,d){var y=+m.slice(0,4),mo=+m.slice(5,7)-1+d;y+=Math.floor(mo/12);mo=((mo%12)+12)%12;return y+'-'+('0'+(mo+1)).slice(-2);}
 function waPhone(p){var d=String(p||'').replace(/\D/g,'');if(d.charAt(0)==='0')d='972'+d.slice(1);return d;}
-function paySlotCount(id){var P=S.pay,s=P.slots.filter(function(x){return x.id===id;})[0];return payOv[id]!=null?payOv[id]:(s?s.count:0);}
+function paySlotCount(id){var P=S.pay,s=P.slots.filter(function(x){return x.id===id;})[0],g=(P.groups||[]).filter(function(x){return x.id===id;})[0];
+  if(payOv[id]!=null)return payOv[id];if(g&&g.link)return g.link.lessons;return s?s.count:0;}
 /* מספר השיעורים של תלמיד/ה: תיקון ידני, או לפי מספר השיעורים בשיעור הקבוע (פחות שיעורים לפני שהצטרף/ה) */
 function payLessons(st){
   if(payN[st.token]!=null)return payN[st.token];
@@ -346,32 +347,38 @@ function payView(){
     '<div class="row"><span class="muted">מחיר לשיעור (כולל מע"מ)</span><span class="row" style="gap:6px"><input class="pn" style="width:70px" id="payPrice" inputmode="decimal" value="'+P.price+'"> ₪ <button class="mini" id="payPriceSave">שמירה</button></span></div></div>';
   var msg=P.msg?'<div class="notice msg">'+esc(P.msg)+'</div>':'';
   var keys=(!P.connected||payKeyForm)?payKeysCard():'<div class="muted" style="margin:0 4px 10px">מחובר ל-Morning ✓'+(P.sandbox?' (חשבון ניסיון)':'')+' · <button class="mini" id="pkOpen">החלפת מפתח</button></div>';
-  var slots='<div class="card"><h2>כמה שיעורים יש החודש</h2><div class="muted" style="margin-bottom:4px">נספר לפי הלוח, בלי שיעורים שבוטלו. אפשר לתקן (חג, חופשה).</div>'+
-    P.slots.map(function(s){return '<div class="li"><div style="flex:1;min-width:150px"><b>'+esc(slotName(s.id))+'</b><div class="muted">'+s.dates.map(function(d){return '<span class="'+(d.cancelled?'x':'')+'">'+fmtD(d.date)+'</span>';}).join(', ')+'</div></div>'+
-      '<input class="pn" data-pso="'+s.id+'" inputmode="numeric" value="'+paySlotCount(s.id)+'"></div>';}).join('')+'</div>';
-  var tot=0,paid=0,need=0,L=P.students.map(function(st){
-    var n=payLessons(st),amt=n*P.price,p=st.pay,stale=p&&p.status!=='paid'&&p.url&&(p.lessons!==n||p.amount!==amt);
-    if(!st.gone){tot+=p&&p.status==='paid'?p.amount:amt;}if(p&&p.status==='paid')paid+=p.amount;if(payNeeds(st))need++;
-    var tag=p&&p.status==='paid'?'<span class="tag ok">שילם ✓</span>':stale?'<span class="tag wait">הסכום השתנה</span>':p&&p.url?'<span class="tag">יש קישור</span>':'';
-    var wa=p&&p.url&&p.status!=='paid'&&!stale?'https://wa.me/'+waPhone(st.phone)+'?text='+encodeURIComponent('היי '+st.name+', התשלום לחודש '+P.label+' בסטודיו DNG: '+p.lessons+' שיעורים × '+P.price+' ₪ = '+p.amount+' ₪.\nלתשלום: '+p.url+'\nתודה!'):'';
-    return '<div class="li"><div style="flex:1;min-width:130px"><b>'+esc(st.name)+'</b> '+tag+'<div class="muted">'+esc(slotName(st.slot))+(st.gone?' · כבר לא רשום/ה':'')+'</div></div>'+
-      (p&&p.status==='paid'?'<span class="muted">'+p.lessons+' שיעורים</span>':'<input class="pn" data-pn="'+st.token+'" inputmode="numeric" value="'+n+'"'+(st.gone?' disabled':'')+'>')+
-      '<span class="amt">'+(p&&p.status==='paid'?p.amount:amt)+' ₪</span>'+
-      '<div style="flex-basis:100%;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">'+
-        (wa?'<a class="btn sm ok" style="text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה בוואטסאפ</a>':'')+
-        (p&&p.url&&!stale&&p.status!=='paid'?'<button class="mini" data-pcopy="'+esc(p.url)+'">העתקת קישור</button>':'')+
-        (p?'<button class="mini" data-pmark="'+p.id+'" data-on="'+(p.status==='paid'?0:1)+'">'+(p.status==='paid'?'ביטול "שילם"':'סימון ששילם')+'</button>':'')+
-      '</div></div>';}).join('');
-  var list='<div class="card pay"><h2>תלמידים ('+P.students.filter(function(x){return !x.gone;}).length+')</h2>'+
-    '<div class="muted" style="margin-bottom:6px">סה"כ לחודש: <b>'+tot+' ₪</b> · שולם: <b>'+paid+' ₪</b></div>'+(L||'<div class="empty">אין תלמידים</div>')+'</div>';
-  var go=P.connected&&!payKeyForm?'<button class="btn pri" id="payGo" style="width:100%;margin:0 0 10px"'+(need?'':' disabled')+'>'+(need?'יצירת '+need+' קישורי תשלום ב-Morning':'לכל התלמידים יש קישור')+'</button>':'';
-  return head+msg+keys+slots+go+list+
-    '<p class="foot">יוצרים קישורים, ואז שולחים לכל תלמיד/ה בוואטסאפ. אחרי התשלום Morning מוציא חשבונית מס/קבלה, והתלמיד/ה מסומן/ת כאן "שילם" לבד (ונשלח אליך מייל). שינית מספר שיעורים אחרי שנוצר קישור? לוחצים שוב "יצירת קישורים" ונוצר קישור חדש בסכום המעודכן.</p>';
+  var need=0,anyLink=false;
+  var cards=P.groups.map(function(g){
+    var n=paySlotCount(g.id),amt=n*P.price,L=g.link,stale=L&&(L.lessons!==n||L.price!==amt);
+    if(n>0&&(!L||stale))need++;if(L)anyLink=true;
+    var dates=g.dates.filter(function(d){return !d.cancelled;}).map(function(d){return fmtD(d.date);}).join(', ');
+    var wa=L&&!stale?'https://wa.me/?text='+encodeURIComponent('היי לכולם! התשלום על '+slotName(g.id)+' בחודש '+P.label+': '+L.lessons+' שיעורים ('+dates+'), '+L.price+' ₪ לכל אחד/ת.\nלתשלום: '+L.url+'\nתודה!'):'';
+    return '<div class="card pay"><div class="row"><div style="flex:1;min-width:150px"><b>'+esc(slotName(g.id))+'</b> '+(L?(stale?'<span class="tag wait">המספר השתנה</span>':'<span class="tag ok">יש קישור</span>'):'')+
+      '<div class="muted">'+g.dates.map(function(d){return '<span class="'+(d.cancelled?'x':'')+'">'+fmtD(d.date)+'</span>';}).join(', ')+'</div></div>'+
+      '<input class="pn" data-pso="'+g.id+'" inputmode="numeric" value="'+n+'" aria-label="מספר שיעורים"></div>'+
+      '<div class="muted" style="margin-top:4px">'+(n?n+' × '+P.price+' = <b>'+amt+' ₪</b> לכל אחד/ת':'אין שיעורים החודש')+'</div>'+
+      (L&&!stale?'<input class="link" style="margin-top:8px" readonly value="'+esc(L.url)+'" onclick="this.select()">'+
+        '<div class="acts"><a class="btn ok" style="text-align:center;text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה לקבוצה בוואטסאפ</a><button class="btn" data-pcopy="'+esc(L.url)+'">העתקת קישור</button></div>':'')+
+      (g.paid?'<div style="margin-top:8px"><b style="font-size:13px">שילמו ('+g.paid.length+'):</b> <span class="muted">'+(g.paid.length?g.paid.map(function(x){return esc(x.name);}).join(', '):'עוד אף אחד')+'</span></div>':'')+
+      (g.members.length?'<div class="muted" style="margin-top:6px">בקבוצה באפליקציה: '+g.members.map(esc).join(', ')+'</div>':'')+'</div>';}).join('');
+  var go=P.connected&&!payKeyForm?'<button class="btn pri" id="payGo" style="width:100%;margin:0 0 10px"'+(need?'':' disabled')+'>'+(need?'יצירת '+need+' קישורי תשלום לקבוצות ב-Morning':'לכל הקבוצות יש קישור')+'</button>'+
+    (anyLink?'<button class="btn" id="payCheck" style="width:100%;margin:0 0 10px">מי שילם? (בדיקה ב-Morning)</button>':''):'';
+  if(!impFrom){var t=new Date();impFrom=addMonth(t.getFullYear()+'-'+('0'+(t.getMonth()+1)).slice(-2),-1);}
+  var I=P.imp,imp='<div class="card"><h2>ייבוא תלמידים מ-Morning</h2><div class="muted" style="margin-bottom:8px">מכניס לאפליקציה את מי ששילם בחודש מסוים, לפי הקבוצה שכתובה בחשבונית. קודם רואים רשימה, ורק אחרי אישור הם נכנסים.</div>'+
+    '<div class="row"><input class="link" style="width:150px;direction:ltr" type="month" id="impFrom" value="'+impFrom+'"><button class="btn sm" id="impPrev"'+(P.connected?'':' disabled')+'>תצוגה מקדימה</button></div>';
+  if(I){var by={};I.add.forEach(function(a){(by[a.slot]=by[a.slot]||[]).push(a.name);});
+    imp+='<div class="prev"><div class="muted">'+(I.done?'נוספו':'ייכנסו')+' ('+I.add.length+') – לפי '+esc(I.label)+':</div>'+(I.add.length?S.slots.filter(function(x){return by[x.id];}).map(function(x){return '<div class="li"><b>'+esc(slotName(x.id))+' ('+by[x.id].length+')</b><span class="muted">'+by[x.id].map(esc).join(', ')+'</span></div>';}).join(''):'<div class="empty">אין חדשים</div>')+
+      (I.skip.length?'<div class="muted" style="margin-top:8px">לא ייכנסו ('+I.skip.length+'):</div>'+I.skip.map(function(x){return '<div class="li"><span>'+esc(x.name)+'<div class="muted">'+esc(x.why)+'</div></span>'+
+        (x.unclear&&!I.done?'<select class="sub" data-imps="'+esc(x.name)+'"><option value="">לא להוסיף</option>'+S.slots.map(function(sl){return '<option value="'+sl.id+'">'+esc(slotName(sl.id))+'</option>';}).join('')+'</select>':'')+'</div>';}).join(''):'')+
+      (!I.done&&(I.add.length||I.skip.some(function(x){return x.unclear;}))?'<button class="btn ok" id="impGo" data-from="'+esc(I.month)+'" style="width:100%;margin-top:8px">הוספה לקבוצות</button>':'')+'</div>';}
+  imp+='</div>';
+  return head+msg+keys+'<div class="muted" style="margin:0 4px 8px">מספר השיעורים נספר לפי הלוח, בלי שיעורים שבוטלו. אפשר לתקן (חג, חופשה).</div>'+go+cards+
+    '<p class="foot">לכל קבוצה נוצר קישור תשלום קבוע אחד ב-Morning, וכל חברי הקבוצה משלמים בו. שולחים אותו לקבוצת הוואטסאפ. אחרי תשלום Morning מוציא חשבונית מס/קבלה. "מי שילם?" בודק את החשבוניות ב-Morning. שינית מספר שיעורים אחרי שנוצר קישור? לוחצים שוב "יצירת קישורים" ונוצר קישור חדש בסכום המעודכן.</p>'+imp;
 }
 function bindPay(act){
   document.querySelectorAll('[data-pm]').forEach(function(b){b.onclick=function(){payMonth=addMonth(payMonth,+b.dataset.pm);payOv={};payN={};call('adminState',[BOOT.admin,week,payMonth],setState);};});
   document.querySelectorAll('[data-pso]').forEach(function(i){i.onchange=function(){var v=parseInt(i.value,10);if(!(v>=0&&v<=10)){toast('מספר בין 0 ל-10');render();return;}
-    payOv[i.dataset.pso]=v;S.pay.students.forEach(function(st){if(st.slot===i.dataset.pso)delete payN[st.token];});render();};});
+    payOv[i.dataset.pso]=v;render();};});
   document.querySelectorAll('[data-pn]').forEach(function(i){i.onchange=function(){var v=parseInt(i.value,10);if(!(v>=0&&v<=10)){toast('מספר בין 0 ל-10');render();return;}payN[i.dataset.pn]=v;render();};});
   var ps=$('payPriceSave');if(ps)ps.onclick=function(){act('payPrice',{price:$('payPrice').value});toast('המחיר נשמר');};
   var po=$('pkOpen');if(po)po.onclick=function(){payKeyForm=true;render();};
@@ -383,9 +390,12 @@ function bindPay(act){
   document.querySelectorAll('[data-pcopy]').forEach(function(b){b.onclick=function(){var u=b.dataset.pcopy;
     function old(){var t=document.createElement('textarea');t.value=u;document.body.appendChild(t);t.select();try{document.execCommand('copy');toast('הקישור הועתק');}catch(e){toast('לא הצלחתי להעתיק');}t.remove();}
     try{navigator.clipboard.writeText(u).then(function(){toast('הקישור הועתק');},old);}catch(e){old();}};});
-  var g=$('payGo');if(g)g.onclick=function(){var rows=S.pay.students.filter(payNeeds).map(function(st){return {token:st.token,lessons:payLessons(st)};});
-    if(!rows.length)return;g.textContent='יוצר קישורים… (כמה שניות לכל תלמיד/ה)';
-    call('adminAction',[BOOT.admin,'payCreate',{rows:rows,week:week}],function(r){payN={};payOv={};setState(r);});};
+  var g=$('payGo');if(g)g.onclick=function(){var c={};S.pay.groups.forEach(function(x){c[x.id]=paySlotCount(x.id);});
+    g.textContent='יוצר קישורים…';call('adminAction',[BOOT.admin,'payGroupCreate',{counts:c,week:week}],function(r){setState(r);});};
+  var ip=$('impPrev');if(ip)ip.onclick=function(){impFrom=$('impFrom').value||impFrom;ip.textContent='מושך מ-Morning…';call('adminAction',[BOOT.admin,'payImport',{from:impFrom,week:week}],setState);};
+  var ig=$('impGo');if(ig)ig.onclick=function(){if(!ig.dataset.c){ig.dataset.c='1';ig.textContent='בטוח? להוסיף';return;}var pick={};document.querySelectorAll('[data-imps]').forEach(function(x){if(x.value)pick[x.dataset.imps]=x.value;});
+    call('adminAction',[BOOT.admin,'payImport',{from:ig.dataset.from,apply:true,pick:pick,week:week}],function(r){setState(r);toast('התלמידים נוספו');});};
+  var ck=$('payCheck');if(ck)ck.onclick=function(){ck.textContent='בודק ב-Morning…';call('adminAction',[BOOT.admin,'payGroupCheck',{week:week}],setState);};
 }
 /* ---------------- inventory (מלאי) ---------------- */
 function nfmt(x){return String(Math.round(x*1000)/1000);}
