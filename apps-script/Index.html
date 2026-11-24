@@ -50,7 +50,7 @@ h1{font-size:17px;margin:0;font-weight:700;line-height:1.15}h1 span{display:bloc
 .link{width:100%;font:12px var(--mono);direction:ltr;border:1px solid var(--hair);border-radius:10px;padding:8px;background:var(--card2)}
 .foot{font-size:11px;color:var(--mid);text-align:center;margin-top:16px;line-height:1.6}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--pill);color:var(--pillink);padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:9}
-.toast.on{opacity:1}
+.toast.on{opacity:1}.toast.undo{pointer-events:auto}.toast button{background:none;border:0;color:var(--accent);font:inherit;font-weight:600;text-decoration:underline;cursor:pointer;padding:0 4px}
 .busy{opacity:.55;pointer-events:none}
 .grp{margin:14px 2px 6px;padding-bottom:4px;border-bottom:1px solid var(--line,#0002);font-size:15px}
 .field textarea{min-height:70px;resize:vertical}
@@ -97,7 +97,9 @@ select.mini,select.sub{background-position:left 10px center!important;padding-le
 var BOOT = <?!= boot ?>;
 var $=function(id){return document.getElementById(id);};
 function esc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
-function toast(m){var t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(function(){t.classList.remove('on');},2200);}
+var undoId='';
+function toast(m){var t=$('toast'),u=undoId;undoId='';t.textContent=m;t.classList.remove('undo');if(u){t.textContent='נמחק · ';var b=document.createElement('button');b.textContent='התחרטתי';b.onclick=function(){t.classList.remove('on','undo');call('adminAction',[BOOT.admin,'trashUndo',{id:u,week:week}],function(r){setState(r);toast('הוחזר');});};t.appendChild(b);t.classList.add('undo');}
+  t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(function(){t.classList.remove('on','undo');},u?9000:2200);}
 function fmtD(iso){var p=iso.split('-');return (+p[2])+'.'+(+p[1]);}
 var SL={},S=null,week=0,tab='',payMonth='',impFrom='',payOv={},payN={},payCb={t:'',a:'',b:'',na:null,nb:null},payKeyForm=false,ADMIN=!!BOOT.admin,tcEdit='',wsEdit='',wsCopy=null,stEdit='',stForm=false,stPend={},stBusy=0,rcEdit='',rcRows=[],rcPrev={};
 var DAYS=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
@@ -119,7 +121,10 @@ function call(fn,args,ok,fail){
     .withFailureHandler(function(e){$('app').classList.remove('busy');toast((e&&e.message||'שגיאה').replace(/^Error:\s*/,''));if(fail)fail();});
   r[fn].apply(r,args);
 }
-function setState(st){S=st;if(st&&st.slots)st.slots.forEach(function(s){SL[s.id]=s;});render();}
+var trashSeen=null;
+function setState(st){S=st;if(st&&st.slots)st.slots.forEach(function(s){SL[s.id]=s;});
+  if(ADMIN&&st&&st.trash){var top=st.trash[0];if(trashSeen!==null&&top&&top.id!==trashSeen&&Date.now()-top.at<60000){undoId=top.id;setTimeout(function(){if(undoId)toast('');},80);}trashSeen=top?top.id:'';}
+  render();}
 function render(){
   var app=$('app');
   if(!S){app.innerHTML='<div class="empty">טוען…</div>';return;}
@@ -290,6 +295,8 @@ function adminView(){
         '<div class="row" style="gap:6px;margin-top:6px"><input class="ieL" data-t="'+i.token+'" value="'+esc(i.label||'')+'" maxlength="40" placeholder="שם" style="flex:1;min-width:0"><select class="mini ieS" data-t="'+i.token+'"><option value="">התלמיד/ה בוחר/ת</option>'+S.slots.map(function(x){return '<option value="'+x.id+'"'+(x.id===i.slot?' selected':'')+'>'+x.day+' '+x.part+'</option>';}).join('')+'</select><button class="btn" data-ie="'+i.token+'">שמירה</button></div>'+
         '<div class="acts">'+(i.link?'<a class="btn ok" style="text-align:center;text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה בוואטסאפ</a>':'<span></span>')+'<button class="btn" data-a="revoke" data-t="'+i.token+'">ביטול קישור</button></div></div>';}):'<div class="empty">עוד לא נוצרו קישורים</div>')+'</div>';
   }
+  var tr=S.trash||[];
+  if(tr.length)body+='<details class="card"><summary><b>נמחקו לאחרונה ('+tr.length+')</b></summary><div class="muted" style="margin:6px 0">אפשר להחזיר עד 30 יום אחרי המחיקה</div>'+tr.map(function(x){var d=new Date(x.at);return '<div class="li"><span>'+esc(x.label)+' <span class="muted">· '+d.getDate()+'.'+(d.getMonth()+1)+'</span></span><button class="mini" data-undo="'+x.id+'">החזרה</button></div>';}).join('')+'</details>';
   return tabs+body;
 }
 /* ---------------- teachers (מורים) ---------------- */
@@ -562,6 +569,7 @@ function bindAdmin(){
   var K=BOOT.admin;
   function act(a,p){p=p||{};p.week=week;call('adminAction',[K,a,p],setState);}
   document.querySelectorAll('[data-tab]').forEach(function(b){b.onclick=function(){tab=b.dataset.tab;render();};});
+  document.querySelectorAll('[data-undo]').forEach(function(b){b.onclick=function(){call('adminAction',[K,'trashUndo',{id:b.dataset.undo,week:week}],function(r){setState(r);toast('הוחזר');});};});
   document.querySelectorAll('[data-ww]').forEach(function(b){b.onclick=function(){week=+b.dataset.ww;call('adminState',[K,week],setState);};});
   document.querySelectorAll('[data-a]').forEach(function(b){b.onclick=function(){act(b.dataset.a,{token:b.dataset.t,key:b.dataset.k,on:b.dataset.on==='1',delta:+b.dataset.d||0});};});
   document.querySelectorAll('[data-ie]').forEach(function(b){b.onclick=function(){var t=b.dataset.ie,l=document.querySelector('.ieL[data-t="'+t+'"]'),sl=document.querySelector('.ieS[data-t="'+t+'"]');act('invEdit',{token:t,label:l.value,slot:sl.value});toast('נשמר');};});
