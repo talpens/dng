@@ -959,19 +959,24 @@ function mCreateLink_(D, m, st, n, price, payId) {
 function mCreateGroupLink_(desc, price) {
   // Morning דורש סוג מסמך (320 = חשבונית מס/קבלה, כמו כל המסמכים בחשבון) ותוסף סליקה (אשראי, סוג 12200).
   // לא ידוע בדיוק באיזו צורה הוא מצפה לשדות האלה, אז מנסים כמה צורות בסדר, ועוברות הלאה רק על שגיאות של סוג מסמך/תוסף.
-  let pid = ''; try { pid = mPlugin_(); } catch (e) { pid = ''; }
+  let full = null; try { full = (mFetch_('get', '/documents/info?type=320').paymentPlugins || [])[0] || null; } catch (e) { console.log('documents/info failed: ' + e.message); }
+  const pid = full ? full.id : '';
+  const today = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
   const mk = v => {
     const data = { description: desc, documentType: 320, documentVatType: 0, notify: true, addClient: false, maxPayments: 1, maxQuantity: 1, themeId: 1002,
       openAmount: false, showSearchEngines: false, enablePredefinedPaymentAmounts: false, predefinedPaymentAmounts: [], requireTaxId: false };
+    if (v.date) data.date = today;
     if (v.plugins === 'none') data.plugins = [];
-    else if (v.plugins === 'typed' && pid) data.plugins = [{ id: pid, type: v.ptype || 12200 }];
+    else if (v.plugins === 'full' && full) data.plugins = [full];
+    else if (v.plugins === 'typed' && pid) data.plugins = [{ id: pid, type: 12200 }];
     else if (v.plugins === 'idonly' && pid) data.plugins = [{ id: pid }];
-    else if (v.plugins === 'typeonly') data.plugins = [{ type: v.ptype || 12200 }];
-    return { type: 0, price, currency: 'ILS', description: desc, themeId: 1002, active: true, showSearchEngines: false, documentType: 320, data };
+    const body = { type: 0, price, currency: 'ILS', description: desc, themeId: 1002, active: true, showSearchEngines: false, documentType: 320, data };
+    if (v.date) body.date = today;
+    if (v.top === 'plugins' && full) body.plugins = [full];
+    return body;
   };
-  // הלוג הראה: סוג מסמך מתקבל רק ברמה העליונה, ואז נשארת שאלה מה צורת התוסף. מנסים כמה צורות.
-  try { const inf = mFetch_('get', '/documents/info?type=320'); console.log('documents/info plugins: ' + JSON.stringify(inf.paymentPlugins || inf.plugins || inf).slice(0, 600)); } catch (e) { console.log('documents/info failed: ' + e.message); }
-  const tries = [{ plugins: 'none' }, { plugins: 'idonly' }, { plugins: 'typed' }, { plugins: 'typed', ptype: 10 }, { plugins: 'typed', ptype: 1 }, { plugins: 'typeonly' }, { plugins: 'typeonly', ptype: 10 }];
+  // ניסיון אחרון: תאריך הפקה (date) + אובייקט התוסף המלא כפי ש-Morning מחזיר אותו, בכמה מקומות.
+  const tries = [{ date: 1, plugins: 'full' }, { date: 1, plugins: 'none' }, { date: 1, plugins: 'typed' }, { date: 1, plugins: 'none', top: 'plugins' }, { plugins: 'full' }, { plugins: 'none', top: 'plugins' }];
   let d = null, err = null;
   for (let i = 0; i < tries.length && !d; i++) {
     try { d = mFetch_('post', '/payments/links', mk(tries[i])); }
