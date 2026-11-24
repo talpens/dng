@@ -619,6 +619,36 @@ function bindAdmin(){
   }
   var nv=$('invNew');if(nv)nv.onclick=function(){act('invite',{label:$('invLabel').value,slot:$('invSlot').value});toast('נוצר קישור');};
 }
+/* משיכה למטה מראש הדף = רענון הנתונים */
+(function(){
+  var y0=null,dy=0,busy=false,ind=document.createElement('div');
+  ind.style.cssText='position:fixed;top:0;left:50%;transform:translate(-50%,-50px);background:var(--pill);color:var(--pillink);padding:6px 14px;border-radius:999px;font-size:13px;z-index:9;transition:transform .15s;pointer-events:none';
+  document.body.appendChild(ind);
+  function reload(){
+    var ok=function(r){busy=false;ind.style.transform='translate(-50%,-50px)';setState(r);};
+    var fail=function(){busy=false;ind.style.transform='translate(-50%,-50px)';};
+    if(ADMIN)call('adminState',[BOOT.admin,week],ok,fail);
+    else if(BOOT.tch)call('teacherState',[BOOT.tch],ok,fail);
+    else if(BOOT.token)call('studentState',[BOOT.token],ok,fail);
+    else if(BOOT.ws)call('wsPublicState',[BOOT.ws],ok,fail);
+    else fail();
+  }
+  document.addEventListener('touchstart',function(e){
+    var t=e.target&&e.target.tagName;
+    y0=(!busy&&(window.scrollY||document.documentElement.scrollTop||0)<=0&&e.touches.length===1&&!/INPUT|SELECT|TEXTAREA/.test(t))?e.touches[0].clientY:null;dy=0;
+  },{passive:true});
+  document.addEventListener('touchmove',function(e){
+    if(y0===null)return;dy=e.touches[0].clientY-y0;
+    if(dy<=0){y0=null;ind.style.transform='translate(-50%,-50px)';return;}
+    if(e.cancelable)e.preventDefault();
+    ind.textContent=dy>80?'עזוב לרענון':'משוך לרענון';ind.style.transform='translate(-50%,'+(Math.min(dy,100)-40)+'px)';
+  },{passive:false});
+  document.addEventListener('touchend',function(){
+    if(y0===null)return;y0=null;
+    if(dy>80){busy=true;ind.textContent='מרענן…';ind.style.transform='translate(-50%,16px)';reload();}
+    else ind.style.transform='translate(-50%,-50px)';
+  },{passive:true});
+})();
 /* boot: the server already sent the first state with the page */
 if(BOOT.state)setState(BOOT.state);
 else if(ADMIN)call('adminState',[BOOT.admin,0],setState);
