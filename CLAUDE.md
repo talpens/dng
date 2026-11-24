@@ -15,7 +15,7 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
    - Files in `apps-script/`: `קוד.js` (server, shown as Code.gs in the editor: setup, doGet, studentState, register, setAbsence, requestMakeup,
      cancelMakeup, adminState, adminAction) and `Index.html` (whole client UI, vanilla JS, `google.script.run`).
    - Data lives in a Google Sheet ("שיעורים – סטודיו DNG") with tabs: Students, Invites, Absences,
-     Makeups, Cancelled, Workshops, WsSignups, Inventory, Recipes, Teachers, Subs, Payments, Settings (the workshop, Inventory, Recipes, Teachers, Subs and Payments tabs are created automatically on first use). All cells are text. Settings holds ADMIN_KEY, SEATS (8),
+     Makeups, Cancelled, Workshops, WsSignups, Inventory, Recipes, Teachers, Subs, Payments, GroupLinks, Settings (the workshop, Inventory, Recipes, Teachers, Subs, Payments and GroupLinks tabs are created automatically on first use). All cells are text. Settings holds ADMIN_KEY, SEATS (8),
      NOTIFY_EMAIL, APP_URL (base for invite links; must be https://talpens.github.io/dng/site/), LESSON_PRICE (180, incl. VAT).
    - Source lives in `apps-script/` (pulled with clasp). The Sheet ID is kept in Script Properties (SHEET_ID), not in code.
 2. **App shell: `site/`** (static, no build). `site/index.html` full-screens the web app in an iframe,
@@ -56,13 +56,16 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
   lessonKey → teacherId) and replaces the regular teachers for that lesson only. Students see the teacher on each lesson.
   The Teachers tab is seeded once on creation (Tair: sun-am, wed-pm; "דורון נעמה גלפר": the rest).
 
-- Monthly payments (תשלומים, admin tab, Morning = formerly Green Invoice): Tal picks a month; each slot's lesson count =
-  its dates in the month minus cancelled lessons (editable per slot and per student; a student who joined mid-month
-  counts from Students.since). Amount = lessons × LESSON_PRICE. "יצירת קישורים" calls Morning `POST /payments/form`
-  (type 320 tax invoice+receipt, vatType 1 = price incl. VAT, custom = Payments.id) and stores the link per student/month;
-  Tal sends it by WhatsApp. After payment Morning POSTs to the web app's doPost (`?pay=<MORNING_HOOK>`, body field
-  external_data = Payments.id) → marked paid + email. Tal can also mark paid by hand. Changing the count/price after a
-  link exists → "create" makes a new link for that student. A paid row is never changed.
+- Monthly payments (תשלומים, admin tab, Morning = formerly Green Invoice): ONE reusable Morning payment link per group
+  (slot) per month, shared in the group's WhatsApp. Lesson count per slot = its dates in the month minus cancelled
+  lessons (editable; a cancelled lesson is not charged AND still gives a makeup credit — Tal confirmed). Amount per
+  person = lessons × LESSON_PRICE. "יצירת קישורים" calls `POST /payments/links` (body mirrors Tal's existing links:
+  type 0, price, currency, data{description,...}) → GroupLinks row (month, slot, lessons, price, linkId, url, desc).
+  Description = "<slot name> <month> – N שיעורים". "מי שילם?" searches Morning documents since the link was created and
+  matches description = link desc. "ייבוא תלמידים מ-Morning": preview, then add, the people who paid in a month as
+  approved students (+ invite) in the group named in their invoice ("שני ערב" → wed-pm, the Monday group moved);
+  unclear ones can be assigned by hand. Changing the count/price after a link exists → a new link.
+  (Older per-student links via `POST /payments/form` + doPost notify still exist in code: Payments sheet.)
   Morning API key: Tal pastes ID + Secret in the admin tab → Script Properties MORNING_ID / MORNING_SECRET
   (+ MORNING_SANDBOX, MORNING_PLUGIN = clearing plugin id from /documents/info, MORNING_HOOK). Never in the Sheet or repo.
   This uses UrlFetchApp (external requests): after the first deploy with it, Tal runs `authorize` once in the script
