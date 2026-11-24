@@ -287,8 +287,7 @@ function adminView(){
       '<div class="card"><h2>קישורים</h2>'+(S.invites.length?byGroup(S.invites.slice().sort(function(a,b){return (a.label||'').localeCompare(b.label||'','he');}),function(i){return i.grp;},function(i){var wa='https://wa.me/?text='+encodeURIComponent('היי'+(i.label?' '+i.label:'')+', זה הקישור האישי שלך להרשמה'+(i.slot?' לשיעור הקבוע ב'+slotName(i.slot):' לשיעורים')+' בסטודיו DNG: '+i.link);
         return '<div class="req"><div class="row"><b>'+esc(i.label||'ללא שם')+(i.slot?' <span class="tag mine">'+esc(slotName(i.slot))+'</span>':'')+'</b><span class="tag'+(i.used?' ok':'')+'">'+(i.used?'בשימוש':'לא נוצל')+'</span></div>'+
         (i.link?'<input class="link" readonly value="'+esc(i.link)+'" onclick="this.select()">':'')+
-        '<div class="row" style="gap:6px;margin-top:6px"><input class="ieL" data-t="'+i.token+'" value="'+esc(i.label||'')+'" maxlength="40" placeholder="שם" style="flex:1;min-width:0"><select class="mini ieS" data-t="'+i.token+'"><option value="">התלמיד/ה בוחר/ת</option>'+S.slots.map(function(x){return '<option value="'+x.id+'"'+(x.id===i.slot?' selected':'')+'>'+x.day+' '+x.part+'</option>';}).join('')+'</select><button class="btn" data-ie="'+i.token+'">שמירה</button></div>'+
-        '<div class="acts">'+(i.link?'<a class="btn ok" style="text-align:center;text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה בוואטסאפ</a>':'<span></span>')+'<button class="btn" data-a="revoke" data-t="'+i.token+'">ביטול קישור</button></div></div>';}):'<div class="empty">עוד לא נוצרו קישורים</div>')+'</div>';
+        '<div class="acts">'+(i.link?'<a class="btn ok" style="text-align:center;text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה בוואטסאפ</a>':'<span></span>')+''+(i.used?'<button class="btn" data-a="invRelease" data-t="'+i.token+'">שחרור קישור</button>':'')+'<button class="btn" data-a="revoke" data-t="'+i.token+'">ביטול קישור</button></div></div>';}):'<div class="empty">עוד לא נוצרו קישורים</div>')+'</div>';
   }
   return tabs+body;
 }
@@ -564,7 +563,6 @@ function bindAdmin(){
   document.querySelectorAll('[data-tab]').forEach(function(b){b.onclick=function(){tab=b.dataset.tab;render();};});
   document.querySelectorAll('[data-ww]').forEach(function(b){b.onclick=function(){week=+b.dataset.ww;call('adminState',[K,week],setState);};});
   document.querySelectorAll('[data-a]').forEach(function(b){b.onclick=function(){act(b.dataset.a,{token:b.dataset.t,key:b.dataset.k,on:b.dataset.on==='1',delta:+b.dataset.d||0});};});
-  document.querySelectorAll('[data-ie]').forEach(function(b){b.onclick=function(){var t=b.dataset.ie,l=document.querySelector('.ieL[data-t="'+t+'"]'),sl=document.querySelector('.ieS[data-t="'+t+'"]');act('invEdit',{token:t,label:l.value,slot:sl.value});toast('נשמר');};});
   document.querySelectorAll('[data-slot]').forEach(function(s){s.onchange=function(){act('slot',{token:s.dataset.slot,slot:s.value});};});
   document.querySelectorAll('[data-sub]').forEach(function(s){s.onchange=function(){act('tchSub',{key:s.dataset.sub,teacherId:s.value});};});
   if(tab==='tch')bindTeachers(act);
