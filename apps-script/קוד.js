@@ -957,15 +957,22 @@ function mCreateLink_(D, m, st, n, price, payId) {
 }
 /** קישור תשלום קבוע ב-Morning (כמו "קישור לתשלום" באתר): כמה אנשים יכולים לשלם בו. מחזיר { id, url }. */
 function mCreateGroupLink_(desc, price) {
-  // Morning דורש סוג מסמך (320 = חשבונית מס/קבלה, כמו כל המסמכים בחשבון). לא ידוע איפה בדיוק, אז מנסים כמה מקומות בסדר.
-  const mk = v => ({ type: v.type, price, currency: 'ILS', description: desc, themeId: 1002, active: true, showSearchEngines: false, documentType: v.top ? 320 : undefined,
-    data: { description: desc, documentType: 320, documentVatType: 0, plugins: [], notify: true, addClient: false, maxPayments: 1, maxQuantity: 1, themeId: 1002,
-      openAmount: false, showSearchEngines: false, enablePredefinedPaymentAmounts: false, predefinedPaymentAmounts: [], requireTaxId: false } });
-  const tries = [{ type: 0 }, { type: 320 }, { type: 0, top: true }];
+  // Morning דורש סוג מסמך (320 = חשבונית מס/קבלה, כמו כל המסמכים בחשבון) ותוסף סליקה (אשראי, סוג 12200).
+  // לא ידוע בדיוק באיזו צורה הוא מצפה לשדות האלה, אז מנסים כמה צורות בסדר, ועוברות הלאה רק על שגיאות של סוג מסמך/תוסף.
+  let pid = ''; try { pid = mPlugin_(); } catch (e) { pid = ''; }
+  const mk = v => {
+    const data = { description: desc, documentType: 320, documentVatType: 0, notify: true, addClient: false, maxPayments: 1, maxQuantity: 1, themeId: 1002,
+      openAmount: false, showSearchEngines: false, enablePredefinedPaymentAmounts: false, predefinedPaymentAmounts: [], requireTaxId: false };
+    if (v.plugins === 'none') data.plugins = [];
+    else if (v.plugins === 'typed' && pid) data.plugins = [{ id: pid, type: 12200 }];
+    else if (v.plugins === 'idonly' && pid) data.plugins = [{ id: pid }];
+    return { type: v.type, price, currency: 'ILS', description: desc, themeId: 1002, active: true, showSearchEngines: false, documentType: v.top ? 320 : undefined, data };
+  };
+  const tries = [{ type: 0 }, { type: 0, plugins: 'typed' }, { type: 0, plugins: 'idonly' }, { type: 0, plugins: 'none' }, { type: 320, plugins: 'typed' }, { type: 0, plugins: 'typed', top: true }];
   let d = null, err = null;
   for (let i = 0; i < tries.length && !d; i++) {
     try { d = mFetch_('post', '/payments/links', mk(tries[i])); }
-    catch (e) { err = e; if (String(e.message || e).indexOf('סוג מסמך') < 0) throw e; console.log('payments/links variant ' + i + ' rejected: ' + e.message); }
+    catch (e) { err = e; const m = String(e.message || e); if (m.indexOf('סוג מסמך') < 0 && m.indexOf('תוסף') < 0) throw e; console.log('payments/links variant ' + i + ' rejected: ' + m); }
   }
   if (!d) throw err;
   const url = d.shortUrl || (d.data || {}).shortUrl || d.url;
