@@ -17,6 +17,8 @@ const SHEETS = {
   Absences:  ['token', 'lessonKey', 'createdAt'],
   Makeups:   ['token', 'lessonKey', 'status', 'createdAt', 'decidedAt'],
   Cancelled: ['lessonKey', 'createdAt'],
+  Workshops: ['id', 'title', 'date', 'from', 'to', 'seats', 'price', 'desc', 'approve', 'status', 'createdAt', 'who'],
+  WsSignups: ['wsId', 'sid', 'token', 'name', 'phone', 'status', 'createdAt'],
   Settings:  ['key', 'value'],
 };
 
@@ -93,11 +95,11 @@ function doGet(e) {
   let t;
   try { t = HtmlService.createTemplateFromFile('Index'); }
   catch (err) { t = HtmlService.createTemplateFromFile('Index.html'); }
-  const token = clean_(e.parameter.t), admin = clean_(e.parameter.admin);
+  const token = clean_(e.parameter.t), admin = clean_(e.parameter.admin), ws = clean_(e.parameter.w);
   // המצב הראשון נשלח יחד עם הדף, כדי שלא יהיה עוד סיבוב לשרת אחרי שהדף נטען.
   let state = null;
-  try { state = admin ? adminState(admin, 0) : token ? studentState(token) : null; } catch (err) { console.log('boot state failed: ' + err); }
-  t.boot = JSON.stringify({ token, admin, state }).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+  try { state = admin ? adminState(admin, 0) : token ? studentState(token) : ws ? wsPublicState(ws) : null; } catch (err) { console.log('boot state failed: ' + err); }
+  t.boot = JSON.stringify({ token, admin, ws, state }).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   return t.evaluate()
     .setTitle('שיעורים – סטודיו DNG')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -106,7 +108,17 @@ function doGet(e) {
 
 /* ===================== sheet helpers ===================== */
 const SH_ = {};
-function sh_(n) { return SH_[n] || (SH_[n] = ss_().getSheetByName(n)); }
+const LAZY_SHEETS = ['Workshops', 'WsSignups'];
+function sh_(n) {
+  if (SH_[n]) return SH_[n];
+  let s = ss_().getSheetByName(n);
+  if (!s && LAZY_SHEETS.indexOf(n) >= 0) { // גיליונות חדשים נוצרים לבד בפעם הראשונה, בלי להריץ setup
+    s = ss_().insertSheet(n); const h = SHEETS[n];
+    s.getRange(1, 1, s.getMaxRows(), h.length).setNumberFormat('@');
+    s.getRange(1, 1, 1, h.length).setValues([h]).setFontWeight('bold'); s.setFrozenRows(1); s.setTabColor('#161616');
+  }
+  return SH_[n] = s;
+}
 function rows_(n) {
   const s = sh_(n); if (!s) throw new Error('חסר גיליון ' + n + ' – צריך להריץ setup');
   const v = s.getDataRange().getValues(), h = SHEETS[n], out = [];
@@ -145,7 +157,7 @@ function setSetting_(k, v) {
  *  - שינוי ידני בגיליון מופיע באפליקציה תוך CACHE_TTL שניות לכל היותר
  *    (או מיד, עם תפריט "סטודיו DNG ← רענון נתונים" / הפונקציה clearCache).
  */
-const CACHE_TTL = 300, CACHE_CHUNK = 90000, LIST_SHEET = { stu: 'Students', inv: 'Invites', abs: 'Absences', mk: 'Makeups', can: 'Cancelled' };
+const CACHE_TTL = 300, CACHE_CHUNK = 90000, LIST_SHEET = { stu: 'Students', inv: 'Invites', abs: 'Absences', mk: 'Makeups', can: 'Cancelled', ws: 'Workshops', wss: 'WsSignups' };
 function cacheVer_(c) { return c.get('dver') || '0'; }
 function cacheGet_() {
   try {
@@ -229,12 +241,12 @@ function fmtD_(iso) { const p = iso.split('-'); return (+p[2]) + '.' + (+p[1]); 
 function load_(fresh) {
   let ver = null;
   if (!fresh) {
-    const hit = cacheGet_(); if (hit) return hit;
+    const hit = cacheGet_(); if (hit && hit.ws && hit.wss) return hit;
     try { ver = cacheVer_(CacheService.getScriptCache()); } catch (e) {}
   }
   const D = {
     stu: rows_('Students'), inv: rows_('Invites'), abs: rows_('Absences'), mk: rows_('Makeups'),
-    can: rows_('Cancelled'), set: settings_(),
+    can: rows_('Cancelled'), ws: rows_('Workshops'), wss: rows_('WsSignups'), set: settings_(),
   };
   if (fresh) bumpCache_();
   cachePut_(D, fresh ? null : ver);
@@ -292,7 +304,8 @@ function studentState_(D, token) {
         mk: m ? m.status : '', started: started_(key), ended: ended_(key), absLate: absLate_(key), absBy: absDeadline_(key).txt };
     }) };
   });
-  return Object.assign(base, { state: 'ok', me: { name: st.name, slot: st.slot }, credits: credits_(D, token), pendingMk: pendingMkCount_(D, token), weeks });
+  return Object.assign(base, { state: 'ok', me: { name: st.name, slot: st.slot }, credits: credits_(D, token), pendingMk: pendingMkCount_(D, token), weeks,
+    workshops: D.ws.filter(w => w.status === 'open' && !wsEnded_(w)).sort(wsSort_).map(w => wsPub_(D, w, token)) });
 }
 function register(token, f) {
   token = clean_(token);
@@ -377,7 +390,12 @@ function adminState_(D, adminKey, weekOff) {
   const students = D.stu.filter(s => s.status === 'approved').map(s => ({ token: s.token, name: s.name, phone: s.phone, slot: s.slot, bonus: +s.bonus || 0, credits: credits_(D, s.token) }))
     .sort((a, b) => a.name.localeCompare(b.name, 'he'));
   const invites = D.inv.slice(-30).reverse().map(i => ({ token: i.token, label: i.label, slot: i.slot, used: !!byTok[i.token], link: (D.set.APP_URL || url) ? (D.set.APP_URL || url) + '?t=' + i.token : '' }));
-  return { state: 'ok', slots: SLOTS, seats: seats_(D), wk, pendingJoin, pendingMk, week, students, invites, hasUrl: !!url };
+  const base = D.set.APP_URL || url;
+  const workshops = D.ws.slice().sort(wsSort_).filter(w => !wsEnded_(w) || w.date >= addDays_(ilNow_().date, -14)).map(w => Object.assign(wsPub_(D, w, ''), {
+    status: w.status, link: base ? base + '?w=' + w.id : '',
+    signups: D.wss.filter(x => x.wsId === w.id && x.status !== 'no').map(x => ({ sid: x.sid, name: x.name, phone: x.phone, status: x.status, student: !!x.token })) }));
+  const pendingWs = D.wss.filter(x => x.status === 'pending').map(x => { const w = D.ws.find(y => y.id === x.wsId); return w && !wsEnded_(w) ? { sid: x.sid, name: x.name, phone: x.phone, title: w.title, date: w.date, free: wsFree_(D, w) } : null; }).filter(Boolean);
+  return { state: 'ok', slots: SLOTS, seats: seats_(D), wk, pendingJoin, pendingMk, pendingWs, week, students, invites, workshops, hasUrl: !!url };
 }
 function adminAction(adminKey, act, p) {
   p = p || {};
@@ -404,8 +422,107 @@ function adminAction(adminKey, act, p) {
     else if (act === 'remove' && st) setRow_(D, 'stu', st, { status: 'removed' });
     else if (act === 'invite') addRow_(D, 'inv', { token: randomToken_(16), label: String(p.label || '').slice(0, 40), createdAt: Date.now(), slot: slotById_(p.slot) ? p.slot : '' });
     else if (act === 'revoke' && p.token) { const r = D.inv.find(i => i.token === clean_(p.token)); if (r) delRow_(D, 'inv', r); }
+    else if (act === 'wsSave') {
+      const f = wsFields_(p), w = p.id ? D.ws.find(x => x.id === clean_(p.id)) : null;
+      if (w) setRow_(D, 'ws', w, f); else addRow_(D, 'ws', Object.assign({ id: randomToken_(10), status: 'open', createdAt: Date.now() }, f));
+    }
+    else if (act === 'wsToggle' && p.id) { const w = D.ws.find(x => x.id === clean_(p.id)); if (w) setRow_(D, 'ws', w, { status: w.status === 'open' ? 'closed' : 'open' }); }
+    else if (act === 'wsDelete' && p.id) {
+      const id = clean_(p.id), w = D.ws.find(x => x.id === id);
+      D.wss.filter(x => x.wsId === id).sort((a, b) => b._row - a._row).forEach(x => delRow_(D, 'wss', x));
+      if (w) delRow_(D, 'ws', w);
+    }
+    else if ((act === 'wsOk' || act === 'wsNo') && p.sid) {
+      const x = D.wss.find(y => y.sid === clean_(p.sid));
+      if (x) setRow_(D, 'wss', x, { status: act === 'wsOk' ? 'ok' : 'no' });
+    }
+    else if (act === 'wsAdd' && p.id) { // רישום ידני על ידי טל (למשל מי שהתקשר/ה)
+      const w = D.ws.find(x => x.id === clean_(p.id)), name = String(p.name || '').trim().slice(0, 40);
+      if (w && name) addRow_(D, 'wss', { wsId: w.id, sid: randomToken_(12), token: '', name, phone: String(p.phone || '').trim().slice(0, 20), status: 'ok', createdAt: Date.now() });
+    }
     saveCache_(D);
     return adminState_(D, adminKey, p.week || 0);
+  });
+}
+
+/* ===================== workshops (סדנאות חד-פעמיות) =====================
+ * סדנה = אירוע חד-פעמי עם תאריך, שעות, מספר מקומות, מחיר ותיאור. לא קשורה לשיעורים
+ * הקבועים ולא ליתרת ההשלמות. נרשמים אליה תלמידים (מהקישור האישי) או כל אחד מקישור
+ * הסדנה (?w=ID). אם הסדנה "דורשת אישור", ההרשמה מחכה לאישור של טל; אחרת נכנסת מיד.
+ * מקום נתפס גם ע"י הרשמה שממתינה לאישור, כדי שלא יהיה עודף נרשמים.
+ */
+function wsSort_(a, b) { return (a.date + a.from).localeCompare(b.date + b.from); }
+function wsEnded_(w) { const n = ilNow_(); return w.date < n.date || (w.date === n.date && n.min >= toMin_(w.to || '23:59')); }
+function wsStarted_(w) { const n = ilNow_(); return w.date < n.date || (w.date === n.date && n.min >= toMin_(w.from || '00:00')); }
+function wsTaken_(D, w) { return D.wss.filter(x => x.wsId === w.id && (x.status === 'ok' || x.status === 'pending')).length; }
+function wsFree_(D, w) { return Math.max(0, (+w.seats || 0) - wsTaken_(D, w)); }
+function wsPub_(D, w, token) {
+  const me = token ? D.wss.find(x => x.wsId === w.id && x.token === token && x.status !== 'no') : null;
+  return { id: w.id, title: w.title, date: w.date, from: w.from, to: w.to, seats: +w.seats || 0, price: w.price, desc: w.desc,
+    approve: w.approve === '1', studentsOnly: w.who === 'students', open: w.status === 'open', free: wsFree_(D, w), started: wsStarted_(w), ended: wsEnded_(w), mine: me ? me.status : '' };
+}
+function wsFields_(p) {
+  const hm = s => /^\d{1,2}:\d{2}$/.test(String(s || '')) ? ('0' + s).slice(-5) : '';
+  const title = String(p.title || '').trim().slice(0, 60), date = /^\d{4}-\d{2}-\d{2}$/.test(p.date || '') ? p.date : '';
+  const from = hm(p.from), to = hm(p.to), seats = Math.max(1, Math.min(99, Math.floor(+p.seats || 0)));
+  if (!title || !date || !from || !to) throw new Error('צריך שם, תאריך ושעות');
+  if (to <= from) throw new Error('שעת הסיום צריכה להיות אחרי שעת ההתחלה');
+  if (!(+p.seats > 0)) throw new Error('צריך מספר מקומות');
+  return { title, date, from, to, seats, price: String(p.price || '').trim().slice(0, 30), desc: String(p.desc || '').trim().slice(0, 400), approve: p.approve ? '1' : '', who: p.studentsOnly ? 'students' : '' };
+}
+function wsDateTxt_(w) { return fmtD_(w.date) + ' ' + w.from + '–' + w.to; }
+function wsDayName_(iso) { return ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'][new Date(iso + 'T12:00:00Z').getUTCDay()]; }
+
+/** דף ציבורי של סדנה (?w=ID) */
+function wsPublicState(id) { return wsPublicState_(load_(), clean_(id)); }
+function wsPublicState_(D, id, done) {
+  const w = D.ws.find(x => x.id === id);
+  if (!w) return { state: 'wsinvalid' };
+  return { state: 'ws', ws: wsPub_(D, w, ''), done: done || '' };
+}
+/** הרשמה לסדנה. token = קישור אישי של תלמיד/ה (אם יש). f = { name, phone } למי שנרשם/ת מקישור הסדנה. */
+function wsSignup(id, token, f) {
+  id = clean_(id); token = clean_(token); f = f || {};
+  return withLock_(() => {
+    const D = load_(true), w = D.ws.find(x => x.id === id);
+    if (!w) throw new Error('הסדנה לא נמצאה');
+    if (w.status !== 'open') throw new Error('ההרשמה לסדנה סגורה');
+    if (wsStarted_(w)) throw new Error('הסדנה כבר התחילה');
+    let name, phone;
+    if (token) {
+      const st = D.stu.find(s => s.token === token && s.status === 'approved');
+      if (!st) throw new Error('אין הרשאה');
+      if (D.wss.some(x => x.wsId === id && x.token === token && x.status !== 'no')) throw new Error('כבר נרשמת לסדנה הזו');
+      name = st.name; phone = st.phone;
+    } else {
+      if (w.who === 'students') throw new Error('הסדנה הזו פתוחה רק לתלמידי הסטודיו');
+      name = String(f.name || '').trim().slice(0, 40); phone = String(f.phone || '').trim().slice(0, 20);
+      if (!name || !phone) throw new Error('צריך שם וטלפון');
+      const digits = s => String(s).replace(/\D/g, '');
+      if (D.wss.some(x => x.wsId === id && x.status !== 'no' && digits(x.phone) === digits(phone))) throw new Error('המספר הזה כבר רשום לסדנה');
+    }
+    if (wsFree_(D, w) <= 0) throw new Error('אין יותר מקומות בסדנה');
+    const status = w.approve === '1' ? 'pending' : 'ok';
+    addRow_(D, 'wss', { wsId: id, sid: randomToken_(12), token, name, phone, status, createdAt: Date.now() });
+    saveCache_(D);
+    notify_(D, (status === 'pending' ? 'בקשת הרשמה לסדנה: ' : 'נרשמ/ה לסדנה: ') + name,
+      name + ' (' + phone + ') ' + (status === 'pending' ? 'מבקש/ת להירשם' : 'נרשמ/ה') + ' לסדנה "' + w.title + '" ב' + wsDayName_(w.date) + ' ' + wsDateTxt_(w) +
+      '\nנשארו ' + wsFree_(D, w) + ' מקומות.');
+    return token ? studentState_(D, token) : wsPublicState_(D, id, status);
+  });
+}
+/** תלמיד/ה מבטל/ת הרשמה לסדנה (רק לפני שהתחילה). */
+function wsCancel(id, token) {
+  id = clean_(id); token = clean_(token);
+  return withLock_(() => {
+    const D = load_(true), w = D.ws.find(x => x.id === id);
+    const x = D.wss.find(y => y.wsId === id && y.token === token && y.status !== 'no');
+    if (!w || !x || !token) throw new Error('לא נמצאה הרשמה');
+    if (wsStarted_(w)) throw new Error('הסדנה כבר התחילה');
+    delRow_(D, 'wss', x);
+    saveCache_(D);
+    notify_(D, 'ביטול הרשמה לסדנה: ' + x.name, x.name + ' ביטל/ה את ההרשמה לסדנה "' + w.title + '" (' + wsDateTxt_(w) + ').');
+    return studentState_(D, token);
   });
 }
 

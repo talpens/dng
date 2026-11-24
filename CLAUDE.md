@@ -15,15 +15,15 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
    - Files in `apps-script/`: `קוד.js` (server, shown as Code.gs in the editor: setup, doGet, studentState, register, setAbsence, requestMakeup,
      cancelMakeup, adminState, adminAction) and `Index.html` (whole client UI, vanilla JS, `google.script.run`).
    - Data lives in a Google Sheet ("שיעורים – סטודיו DNG") with tabs: Students, Invites, Absences,
-     Makeups, Cancelled, Settings. All cells are text. Settings holds ADMIN_KEY, SEATS (8),
+     Makeups, Cancelled, Workshops, WsSignups, Settings (the two workshop tabs are created automatically on first use). All cells are text. Settings holds ADMIN_KEY, SEATS (8),
      NOTIFY_EMAIL, APP_URL (base for invite links; must be https://talpens.github.io/dng/site/).
    - Source lives in `apps-script/` (pulled with clasp). The Sheet ID is kept in Script Properties (SHEET_ID), not in code.
 2. **App shell: `site/`** (static, no build). `site/index.html` full-screens the web app in an iframe,
    plus `manifest.webmanifest` and icons so it installs to the phone home screen.
    - Live: https://talpens.github.io/dng/site/ (GitHub Pages, "deploy from branch" = root of `main`, publishes on
-     every push). The root `index.html` forwards https://talpens.github.io/dng/ to `site/`, keeping ?t= / ?admin=.
+     every push). The root `index.html` forwards https://talpens.github.io/dng/ to `site/`, keeping ?t= / ?admin= / ?w=.
    - Netlify (studio-dng.netlify.app) was used briefly but its free plan forces a "Powered by Netlify" badge
-     over the logo. `netlify.toml` now only 301-redirects every old Netlify link to GitHub Pages, keeping ?t= / ?admin=.
+     over the logo. `netlify.toml` now only 301-redirects every old Netlify link to GitHub Pages, keeping ?t= / ?admin= / ?w=.
    - `index.html` reads `?t=TOKEN` (student) or `?admin=KEY` (admin), remembers it in localStorage,
      and loads `<WEB_APP_URL>?t=...` / `?admin=...` in the iframe. Requires
      `XFrameOptionsMode.ALLOWALL` in doGet (already set).
@@ -40,6 +40,10 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
 - Credits = bonus + absences + cancelled own-slot lessons (since joined, not absent) − approved makeups.
 - Free seats = SEATS − regulars + absent − approved makeups (0 if the lesson is cancelled).
 - Makeup requests need a free seat and an available credit; Tal approves.
+- Workshops (סדנאות): one-off events Tal opens from the admin "סדנאות" tab (name, date, hours, seats, optional
+  price/description, optional "needs my approval", optional "students only"; "duplicate" copies one to a new date). Separate from regular lessons and credits. Approved students
+  see upcoming open workshops in their app; anyone can sign up (name + phone) from the workshop link `?w=<id>`.
+  A pending sign-up holds a seat. Students can cancel until it starts; Tal can add/remove people and close sign-up.
 
 ## Secrets / privacy
 - Never commit the admin key, the Sheet ID, student names/phones, or tokens. This repo is public.
