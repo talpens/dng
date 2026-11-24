@@ -34,8 +34,17 @@
   var APP = 'https://script.google.com/macros/s/AKfycbyMML5WkOLAWTvZxXvFuySfhXMS4FM2mXqsxD_Tep1jxbah-0aSBfWJ0JBiauYgueZZNw/exec';
   var KEY = 'dng-link';
   var q = new URLSearchParams(location.search);
-  var t = q.get('t'), a = q.get('admin'), saved = null;
+  var t = q.get('t'), a = q.get('admin'), w = q.get('w'), saved = null;
   try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) {}
+  // A workshop link (?w=ID) is not remembered. A student who already has their personal link
+  // sees the workshop inside their own app (and signs up with one tap); anyone else gets the sign-up page.
+  if (w && !t && !a && !(saved && saved.t)) {
+    var wf = document.createElement('iframe');
+    wf.src = APP + '?w=' + encodeURIComponent(w); wf.title = 'סטודיו DNG';
+    wf.onload = function () { document.getElementById('spin').style.opacity = 0; };
+    document.body.appendChild(wf);
+    return;
+  }
   // A link with a token always wins and is remembered, so the home-screen icon reopens it.
   if (t || a) { saved = t ? { t: t } : { admin: a }; try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {} }
   if (!saved) {
