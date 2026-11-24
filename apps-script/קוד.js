@@ -424,6 +424,7 @@ function actLists_(act) {
   if (act === 'absence') return ['abs', 'stu'];
   if (act === 'cancel') return ['can'];
   if (act === 'invite' || act === 'revoke') return ['inv'];
+  if (act === 'invEdit') return ['inv', 'stu'];
   if (act.indexOf('ws') === 0) return ['ws', 'wss'];
   if (act.indexOf('stock') === 0) return ['stock', 'rec'];
   if (act.indexOf('tch') === 0) return ['tch', 'sub'];
@@ -454,6 +455,14 @@ function adminAction(adminKey, act, p) {
     else if (act === 'bonus' && st) setRow_(D, 'stu', st, { bonus: (+st.bonus || 0) + (+p.delta || 0) });
     else if (act === 'remove' && st) setRow_(D, 'stu', st, { status: 'removed' });
     else if (act === 'invite') addRow_(D, 'inv', { token: randomToken_(16), label: String(p.label || '').slice(0, 40), createdAt: Date.now(), slot: slotById_(p.slot) ? p.slot : '' });
+    else if (act === 'invEdit' && p.token) {
+      const r = D.inv.find(i => i.token === clean_(p.token));
+      if (r) {
+        const label = String(p.label || '').trim().slice(0, 40), slot = slotById_(p.slot) ? p.slot : '';
+        setRow_(D, 'inv', r, { label, slot });
+        if (st) { const o = {}; if (label) o.name = label; if (slot && slot !== st.slot) { o.slot = slot; o.since = weekStart_(0); } if (Object.keys(o).length) setRow_(D, 'stu', st, o); }
+      }
+    }
     else if (act === 'revoke' && p.token) { const r = D.inv.find(i => i.token === clean_(p.token)); if (r) delRow_(D, 'inv', r); }
     else if (act === 'wsSave') {
       const f = wsFields_(p), w = p.id ? D.ws.find(x => x.id === clean_(p.id)) : null;
