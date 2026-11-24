@@ -58,6 +58,21 @@ h1{font-size:17px;margin:0;font-weight:700;line-height:1.15}h1 span{display:bloc
 .ws{border-inline-start:4px solid var(--accent)}
 .ws .desc{font-size:13px;line-height:1.6;margin-top:8px;white-space:pre-line}
 .price{font-size:13px;font-weight:600}
+.stk{display:flex;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--hair)}
+.stk:first-of-type{border-top:0}.stk .nm{flex:1;min-width:0}.stk .nm b{font-weight:600;font-size:14px}
+.stk.low .nm b{color:#b4491a}
+.qty{display:flex;align-items:center;gap:4px;direction:ltr}
+.qty button{width:34px;height:34px;border:0;border-radius:50%;background:var(--card2);font:600 18px var(--mono);color:var(--ink);padding:0}
+.qty input{width:58px;text-align:center;border:1px solid var(--hair);border-radius:10px;padding:7px 2px;font:500 15px var(--mono);background:var(--card2);color:var(--ink)}
+.unit{font-size:11px;color:var(--mid);min-width:28px}
+.order{border-inline-start:4px solid #b4491a}
+.rc{border-inline-start:4px solid var(--ok)}
+.parts{font-size:13px;line-height:1.7;margin-top:6px}
+.prev{margin-top:8px;background:var(--card2);border-radius:14px;padding:8px 12px}
+.prev .li{font-size:13px}.short{color:#b4491a;font-weight:600}
+.rrow{display:grid;grid-template-columns:1fr 84px 34px;gap:6px;margin:0 0 6px}
+.rrow select,.rrow input{border:1px solid var(--hair);border-radius:10px;padding:9px 8px;font:14px 'IBM Plex Sans Hebrew',sans-serif;background:var(--card2);color:var(--ink);width:100%}
+.cat{font-size:12px;font-weight:600;color:var(--mid);margin:12px 2px 2px}.cat:first-child{margin-top:0}
 </style>
 </head>
 <body>
@@ -70,7 +85,7 @@ var $=function(id){return document.getElementById(id);};
 function esc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function toast(m){var t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(function(){t.classList.remove('on');},2200);}
 function fmtD(iso){var p=iso.split('-');return (+p[2])+'.'+(+p[1]);}
-var SL={},S=null,week=0,tab='',ADMIN=!!BOOT.admin,wsEdit='',wsCopy=null;
+var SL={},S=null,week=0,tab='',ADMIN=!!BOOT.admin,wsEdit='',wsCopy=null,stEdit='',stForm=false,stPend={},stBusy=0,rcEdit='',rcRows=[],rcPrev={};
 var DAYS=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
 function dayName(iso){return DAYS[new Date(iso+'T12:00:00Z').getUTCDay()];}
 function wsWhen(w){return 'יום '+dayName(w.date)+' '+fmtD(w.date)+' · <bdi dir="ltr">'+w.from+'–'+w.to+'</bdi>';}
@@ -177,7 +192,8 @@ function adminView(){
   if(S.state==='denied')return '<div class="card big">קישור ניהול לא תקין.</div>';
   $('who').innerHTML='<b>מצב ניהול</b>';
   var pw=S.pendingWs||[],n=S.pendingJoin.length+S.pendingMk.length+pw.length;if(!tab)tab=n?'req':'week';
-  var tabs='<div class="pills">'+[['req','בקשות'+(n?'<span class="n">'+n+'</span>':'')],['week','השבוע'],['ws','סדנאות'],['stu','תלמידים'],['inv','קישורים']].map(function(t){return '<button data-tab="'+t[0]+'" class="'+(tab===t[0]?'on':'')+'">'+t[1]+'</button>';}).join('')+'</div>';
+  var low=stockLow().length;
+  var tabs='<div class="pills">'+[['req','בקשות'+(n?'<span class="n">'+n+'</span>':'')],['week','השבוע'],['ws','סדנאות'],['stock','מלאי'+(low?'<span class="n">'+low+'</span>':'')],['stu','תלמידים'],['inv','קישורים']].map(function(t){return '<button data-tab="'+t[0]+'" class="'+(tab===t[0]?'on':'')+'">'+t[1]+'</button>';}).join('')+'</div>';
   var body='';
   if(tab==='req'){
     body='<div class="card"><h2>הרשמות חדשות</h2>'+(S.pendingJoin.length?S.pendingJoin.map(function(r){return '<div class="req"><div class="row"><b>'+esc(r.name)+'</b><span class="muted">'+esc(r.phone)+'</span></div>'+
@@ -225,6 +241,8 @@ function adminView(){
           '<div class="acts">'+(wa?'<a class="btn ok" style="text-align:center;text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה בוואטסאפ</a>':'<span></span>')+
           '<button class="btn" data-ws="wsToggle" data-id="'+w.id+'">'+(w.open?'סגירת הרשמה':'פתיחת הרשמה')+'</button>'+
           '<button class="btn" data-wsed="'+w.id+'">עריכה</button><button class="btn" data-wscp="'+w.id+'">שכפול לתאריך אחר</button><button class="btn" data-wsdel="'+w.id+'">מחיקה</button></div></div>';}).join(''):'<div class="card"><div class="empty">עוד אין סדנאות</div></div>');
+  }else if(tab==='stock'){
+    body=stockView();
   }else if(tab==='stu'){
     body='<div class="card"><h2>תלמידים ('+S.students.length+')</h2>'+(S.students.length?S.students.map(function(s){
       return '<div class="li"><div style="flex:1;min-width:140px"><b>'+esc(s.name)+'</b><div class="muted">'+esc(s.phone)+' · יתרה '+s.credits+'</div></div>'+
@@ -240,6 +258,113 @@ function adminView(){
         '<div class="acts">'+(i.link?'<a class="btn ok" style="text-align:center;text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה בוואטסאפ</a>':'<span></span>')+'<button class="btn" data-a="revoke" data-t="'+i.token+'">ביטול קישור</button></div></div>';}).join(''):'<div class="empty">עוד לא נוצרו קישורים</div>')+'</div>';
   }
   return tabs+body;
+}
+/* ---------------- inventory (מלאי) ---------------- */
+function nfmt(x){return String(Math.round(x*1000)/1000);}
+function stockLow(){return (S.stock||[]).filter(function(r){return r.min>0&&r.qty<=r.min;});}
+function stockOrderTxt(){return stockLow().map(function(r){return '• '+r.name+' (יש '+nfmt(r.qty)+(r.unit?' '+r.unit:'')+', מינימום '+nfmt(r.min)+')';}).join('\n');}
+function stockOrderCard(){
+  var L=stockLow();
+  if(!(S.stock||[]).length)return '';
+  if(!L.length)return '<div class="card"><div class="row"><b>הכל במלאי ✓</b><span class="muted">אין מה להזמין</span></div></div>';
+  var wa='https://wa.me/?text='+encodeURIComponent('צריך להזמין לסטודיו DNG:\n'+stockOrderTxt());
+  return '<div class="card order"><h2>צריך להזמין ('+L.length+')</h2>'+L.map(function(r){
+    return '<div class="li"><span><b>'+esc(r.name)+'</b>'+(r.qty<=0?' <span class="tag wait">נגמר</span>':'')+'</span><span class="muted">יש '+nfmt(r.qty)+(r.unit?' '+esc(r.unit):'')+' · מינימום '+nfmt(r.min)+'</span></div>';}).join('')+
+    '<div class="acts"><a class="btn ok" style="text-align:center;text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה בוואטסאפ</a><button class="btn" id="stMail">שליחה אליי במייל</button></div></div>';
+}
+function stockRow(r){
+  return '<div class="stk'+(r.low?' low':'')+'" id="stk_'+r.id+'"><div class="nm"><b>'+esc(r.name)+'</b>'+
+    '<div class="muted">'+(r.min>0?'מינימום '+nfmt(r.min)+(r.unit?' '+esc(r.unit):''):'בלי מינימום')+(r.note?' · '+esc(r.note):'')+'</div></div>'+
+    '<div class="qty"><button data-std="'+r.id+'" data-d="-1" aria-label="פחות">−</button><input data-stq="'+r.id+'" inputmode="decimal" value="'+nfmt(r.qty)+'"><button data-std="'+r.id+'" data-d="1" aria-label="יותר">+</button></div>'+
+    '<span class="unit">'+esc(r.unit||'')+'</span><button class="mini" data-sted="'+r.id+'">עריכה</button></div>';
+}
+function stockList(){
+  var L=S.stock||[];if(!L.length)return '<div class="card"><div class="empty">עוד אין פריטים. מוסיפים פריט ראשון למעלה.</div></div>';
+  var html='',cat=null;
+  L.forEach(function(r){if(r.cat!==cat){if(cat!==null)html+='</div>';cat=r.cat;html+='<div class="card">'+(cat||L[0].cat?'<div class="cat">'+esc(cat||'כללי')+'</div>':'');}html+=stockRow(r);});
+  return html+'</div>';
+}
+function stockForm(){
+  var e=stEdit?(stockItem(stEdit)||{}):{};
+  var cats={};(S.stock||[]).forEach(function(r){if(r.cat)cats[r.cat]=1;});
+  if(!stEdit&&!stForm)return '<button class="btn pri" id="stOpen" style="width:100%;margin:0 0 10px">+ הוספת פריט למלאי</button>';
+  return '<div class="card" id="stFormCard"><h2>'+(stEdit?'עריכת פריט':'הוספת פריט')+'</h2>'+
+    '<div class="field"><label>שם הפריט</label><input id="stName" maxlength="60" placeholder="למשל: פלדספר" value="'+esc(e.name||'')+'"></div>'+
+    '<div class="two"><div class="field"><label>כמות עכשיו</label><input id="stQty" inputmode="decimal" value="'+esc(e.qty!=null?nfmt(e.qty):'')+'"></div>'+
+    '<div class="field"><label>יחידה</label><input id="stUnit" maxlength="20" placeholder="ק&quot;ג, גרם, שקית…" value="'+esc(e.unit||'')+'"></div></div>'+
+    '<div class="two"><div class="field"><label>מינימום (מתחת – להזמין)</label><input id="stMin" inputmode="decimal" value="'+esc(e.min!=null?nfmt(e.min):'')+'"></div>'+
+    '<div class="field"><label>קטגוריה (לא חובה)</label><input id="stCat" maxlength="30" list="stCats" placeholder="למשל: חומרי גלזורה" value="'+esc(e.cat||'')+'"><datalist id="stCats">'+Object.keys(cats).map(function(c){return '<option value="'+esc(c)+'">';}).join('')+'</datalist></div></div>'+
+    '<div class="field"><label>הערה (לא חובה)</label><input id="stNote" maxlength="140" placeholder="למשל: ספק, מק&quot;ט" value="'+esc(e.note||'')+'"></div>'+
+    '<div class="acts"><button class="btn pri" id="stSave">'+(stEdit?'שמירה':'הוספה')+'</button><button class="btn" id="stCancel">ביטול</button>'+(stEdit?'<button class="btn" id="stDel">מחיקת הפריט</button>':'')+'</div></div>';
+}
+/* ---- recipes (מתכוני גלזורה) ---- */
+function isGram(u){return /^(גרם|ג'|ג|גר|gr|g)$/i.test(String(u||'').trim().replace(/["׳.]/g,''));}
+function recNeed(r,kg,pct){return Math.round(kg*pct/100*(isGram(r.unit)?1000:1)*1000)/1000;}
+function recipeCard(c){
+  var parts=c.parts.map(function(x){var r=stockItem(x.id);return r?esc(r.name)+' <b style="font-family:var(--mono);font-weight:500">'+nfmt(x.pct)+'%</b>':'';}).filter(Boolean).join(' · ');
+  var kg=rcPrev[c.id],pv='';
+  if(kg){var anyShort=false;
+    pv='<div class="prev"><div class="muted">להכנת '+nfmt(kg)+' ק"ג יורד מהמלאי:</div>'+c.parts.map(function(x){var r=stockItem(x.id);if(!r)return '';var need=recNeed(r,kg,x.pct),sh=need>r.qty;if(sh)anyShort=true;
+      return '<div class="li"><span>'+esc(r.name)+'</span><span'+(sh?' class="short"':'')+'>'+nfmt(need)+(r.unit?' '+esc(r.unit):'')+' <span class="muted">· יש '+nfmt(r.qty)+'</span>'+(sh?' חסר!':'')+'</span></div>';}).join('')+
+      (anyShort?'<div class="muted short" style="margin-top:4px">אין מספיק מחלק מהחומרים. אם בכל זאת הכנת, הכמות שלהם תרד ל־0.</div>':'')+
+      '<div class="acts"><button class="btn ok" data-rgo="'+c.id+'">אישור, להוריד מהמלאי</button><button class="btn" data-rno="'+c.id+'">ביטול</button></div></div>';}
+  return '<div class="card rc"><div class="top"><div><div class="day">'+esc(c.name)+'</div>'+
+    (c.lastMade?'<div class="when">הוכן לאחרונה '+(function(d){return d.getDate()+'.'+(d.getMonth()+1);})(new Date(c.lastMade))+' · '+nfmt(c.lastKg)+' ק"ג</div>':'')+'</div><button class="mini" data-rced="'+c.id+'">עריכה</button></div>'+
+    '<div class="parts">'+(parts||'<span class="muted">אין חומרים</span>')+'</div>'+(c.note?'<div class="muted" style="margin-top:4px;white-space:pre-line">'+esc(c.note)+'</div>':'')+
+    (kg?pv:'<div class="row" style="margin-top:10px;justify-content:flex-start"><span class="muted">הכנתי</span><input class="link" style="width:70px;text-align:center;font-size:15px" inputmode="decimal" id="rkg_'+c.id+'" placeholder="5"><span class="muted">ק"ג</span><button class="btn sm pri" data-rmk="'+c.id+'">להוריד מהמלאי</button></div>')+'</div>';
+}
+function recipeForm(){
+  var c=rcEdit&&rcEdit!=='new'?((S.recipes||[]).filter(function(x){return x.id===rcEdit;})[0]||{}):{};
+  var opts=function(sel){return '<option value="">בחירת חומר…</option>'+(S.stock||[]).map(function(r){return '<option value="'+r.id+'"'+(r.id===sel?' selected':'')+'>'+esc(r.name)+'</option>';}).join('');};
+  var tot=rcRows.reduce(function(a,x){return a+(+x.pct||0);},0);
+  return '<div class="card rc" id="rcForm"><h2>'+(rcEdit==='new'?'מתכון חדש':'עריכת מתכון')+'</h2>'+
+    '<div class="field"><label>שם הגלזורה</label><input id="rcName" maxlength="60" placeholder="למשל: לבן מט" value="'+esc(c.name||'')+'"></div>'+
+    '<div class="muted" style="margin-bottom:6px">חומרים ואחוז מהמשקל היבש (אפשר מעל 100% עם תוספים)</div>'+
+    rcRows.map(function(x,i){return '<div class="rrow"><select data-rci="'+i+'">'+opts(x.id)+'</select><input data-rcp="'+i+'" inputmode="decimal" placeholder="%" value="'+esc(x.pct)+'"><button class="mini" data-rcx="'+i+'" aria-label="הסרה">✕</button></div>';}).join('')+
+    '<div class="row"><button class="mini" id="rcAdd">+ עוד חומר</button><span class="muted" id="rcTot">סה"כ '+nfmt(tot)+'%</span></div>'+
+    ((S.stock||[]).length?'':'<div class="notice" style="margin-top:8px">קודם מוסיפים את החומרים כפריטים במלאי.</div>')+
+    '<div class="field" style="margin-top:10px"><label>הערה (לא חובה)</label><textarea id="rcNote" maxlength="300" placeholder="למשל: שריפה 1240°, לסנן במסננת 80">'+esc(c.note||'')+'</textarea></div>'+
+    '<div class="acts"><button class="btn pri" id="rcSave">שמירה</button><button class="btn" id="rcCancel">ביטול</button>'+(rcEdit!=='new'?'<button class="btn" id="rcDel">מחיקת המתכון</button>':'')+'</div></div>';
+}
+function recipesView(){
+  var R=S.recipes||[];
+  return '<h2 style="font-size:15px;margin:16px 4px 8px">מתכוני גלזורות</h2>'+(rcEdit?recipeForm():'<button class="btn" id="rcNew" style="width:100%;margin:0 0 10px">+ מתכון חדש</button>')+
+    (R.length?R.map(recipeCard).join(''):(rcEdit?'':'<div class="card"><div class="empty">עוד אין מתכונים. מתכון מוריד את כל החומרים מהמלאי בלחיצה אחת כשמכינים גלזורה.</div></div>'));
+}
+function stockView(){
+  return '<div id="stOrder">'+stockOrderCard()+'</div>'+stockForm()+
+    '<div id="stList">'+stockList()+'</div>'+recipesView()+
+    '<p class="foot">לוחצים + או − כדי לעדכן כמות, או מקלידים את הכמות המדויקת. כשפריט מגיע למינימום הוא עובר לרשימת "צריך להזמין" ונשלח אליך מייל. במתכון: הכמות שמכינים בק"ג, וחומר שהיחידה שלו "גרם" יורד בגרמים.</p>';
+}
+/* עדכון מהיר: הכמות משתנה מיד על המסך, ונשלחת לשרת אחרי רגע (כמה לחיצות = קריאה אחת). */
+function stockRefresh(){
+  if(tab!=='stock')return;
+  var o=$('stOrder'),l=$('stList');if(!o||!l){render();return;}
+  var f=document.activeElement&&document.activeElement.dataset?document.activeElement.dataset.stq:null;
+  o.innerHTML=stockOrderCard();l.innerHTML=stockList();bindStock();
+  var lowN=stockLow().length,tb=document.querySelector('[data-tab="stock"]');if(tb)tb.innerHTML='מלאי'+(lowN?'<span class="n">'+lowN+'</span>':'');
+  if(f){var i=document.querySelector('[data-stq="'+f+'"]');if(i){i.focus();i.select();}}
+}
+function stockQuiet(act,p){
+  stBusy++;p.week=week;
+  google.script.run.withSuccessHandler(function(res){stBusy--;if(!stBusy&&!Object.keys(stPend).length){S=res;stockRefresh();}})
+    .withFailureHandler(function(e){stBusy--;toast((e&&e.message||'שגיאה').replace(/^Error:\s*/,''));call('adminState',[BOOT.admin,week],setState);})
+    .adminAction(BOOT.admin,act,p);
+}
+function stockItem(id){return (S.stock||[]).filter(function(r){return r.id===id;})[0];}
+function stockLocal(r,q){r.qty=Math.max(0,Math.round(q*1000)/1000);r.low=r.min>0&&r.qty<=r.min;}
+function bindStock(){
+  document.querySelectorAll('[data-std]').forEach(function(b){b.onclick=function(){var id=b.dataset.std,r=stockItem(id),d=+b.dataset.d;if(!r)return;
+    if(r.qty+d<0)d=-r.qty;if(!d)return;
+    stockLocal(r,r.qty+d);stPend[id]=(stPend[id]||0)+d;
+    clearTimeout(bindStock['t'+id]);bindStock['t'+id]=setTimeout(function(){var v=stPend[id];delete stPend[id];if(v)stockQuiet('stockDelta',{id:id,delta:v});},700);
+    stockRefresh();};});
+  document.querySelectorAll('[data-stq]').forEach(function(i){i.onchange=function(){var id=i.dataset.stq,r=stockItem(id),q=parseFloat(String(i.value).replace(',','.'));
+    if(!r)return;if(!isFinite(q)||q<0){i.value=nfmt(r.qty);toast('צריך מספר');return;}
+    clearTimeout(bindStock['t'+id]);delete stPend[id];stockLocal(r,q);stockQuiet('stockSet',{id:id,qty:q});stockRefresh();};
+    i.onkeydown=function(ev){if(ev.key==='Enter')i.blur();};});
+  document.querySelectorAll('[data-sted]').forEach(function(b){b.onclick=function(){stEdit=b.dataset.sted;render();var c=$('stFormCard');if(c)c.scrollIntoView();};});
+  var m=$('stMail');if(m)m.onclick=function(){call('adminAction',[BOOT.admin,'stockMail',{week:week}],function(r){setState(r);toast('נשלח למייל');});};
 }
 function bindAdmin(){
   var K=BOOT.admin;
@@ -260,6 +385,34 @@ function bindAdmin(){
     seats:$('wsSeats').value,price:$('wsPrice').value,desc:$('wsDesc').value,approve:$('wsApprove').checked,studentsOnly:$('wsStudents').checked};
     if(!f.title.trim()||!f.date){toast('צריך שם ותאריך');return;}
     var was=wsEdit;f.week=week;call('adminAction',[K,'wsSave',f],function(r){wsEdit='';wsCopy=null;setState(r);toast(was?'נשמר':'הסדנה נפתחה');});};
+  if(tab==='stock'){bindStock();
+    var so=$('stOpen');if(so)so.onclick=function(){stForm=true;render();var n=$('stName');if(n)n.focus();};
+    function rcRead(){rcRows=rcRows.map(function(x,i){var a=document.querySelector('[data-rci="'+i+'"]'),b=document.querySelector('[data-rcp="'+i+'"]');return {id:a?a.value:x.id,pct:b?b.value:x.pct};});}
+    function rcKeep(){var n=$('rcName'),t=$('rcNote');return {n:n?n.value:'',t:t?t.value:''};}
+    function rcRender(){var k=rcKeep();rcRead();render();$('rcName').value=k.n;$('rcNote').value=k.t;}
+    var rn=$('rcNew');if(rn)rn.onclick=function(){rcEdit='new';rcRows=[{id:'',pct:''},{id:'',pct:''},{id:'',pct:''}];render();$('rcForm').scrollIntoView();};
+    document.querySelectorAll('[data-rced]').forEach(function(b){b.onclick=function(){var c=(S.recipes||[]).filter(function(x){return x.id===b.dataset.rced;})[0];if(!c)return;
+      rcEdit=c.id;rcRows=c.parts.map(function(x){return {id:x.id,pct:nfmt(x.pct)};});render();$('rcForm').scrollIntoView();};});
+    var ra=$('rcAdd');if(ra)ra.onclick=function(){rcRead();rcRows.push({id:'',pct:''});rcRender();};
+    document.querySelectorAll('[data-rcx]').forEach(function(b){b.onclick=function(){rcRead();rcRows.splice(+b.dataset.rcx,1);rcRender();};});
+    document.querySelectorAll('[data-rcp]').forEach(function(i){i.oninput=function(){var t=0;document.querySelectorAll('[data-rcp]').forEach(function(x){t+=parseFloat(String(x.value).replace(',','.'))||0;});$('rcTot').textContent='סה"כ '+nfmt(t)+'%';};});
+    var rc=$('rcCancel');if(rc)rc.onclick=function(){rcEdit='';render();};
+    var rs=$('rcSave');if(rs)rs.onclick=function(){rcRead();var f={id:rcEdit==='new'?'':rcEdit,name:$('rcName').value,note:$('rcNote').value,week:week,
+      parts:rcRows.filter(function(x){return x.id&&parseFloat(String(x.pct).replace(',','.'))>0;}).map(function(x){return {id:x.id,pct:String(x.pct).replace(',','.')};})};
+      if(!f.name.trim()){toast('צריך שם');return;}if(!f.parts.length){toast('צריך לפחות חומר אחד עם אחוז');return;}
+      call('adminAction',[K,'stockRecipeSave',f],function(r){rcEdit='';setState(r);toast('המתכון נשמר');});};
+    var rd=$('rcDel');if(rd)rd.onclick=function(){if(rd.dataset.c){call('adminAction',[K,'stockRecipeDelete',{id:rcEdit,week:week}],function(r){rcEdit='';setState(r);toast('המתכון נמחק');});}else{rd.dataset.c='1';rd.textContent='בטוח למחוק?';setTimeout(function(){if(rd.isConnected){delete rd.dataset.c;rd.textContent='מחיקת המתכון';}},3000);}};
+    document.querySelectorAll('[data-rmk]').forEach(function(b){b.onclick=function(){var id=b.dataset.rmk,kg=parseFloat(String($('rkg_'+id).value).replace(',','.'));
+      if(!(kg>0)){toast('כמה ק"ג הכנת?');$('rkg_'+id).focus();return;}rcPrev[id]=kg;render();};});
+    document.querySelectorAll('[data-rno]').forEach(function(b){b.onclick=function(){delete rcPrev[b.dataset.rno];render();};});
+    document.querySelectorAll('[data-rgo]').forEach(function(b){b.onclick=function(){var id=b.dataset.rgo,kg=rcPrev[id];
+      call('adminAction',[K,'stockBatch',{id:id,kg:kg,week:week}],function(r){delete rcPrev[id];setState(r);toast('הורד מהמלאי');});};});
+    var sv=$('stSave');if(sv)sv.onclick=function(){var f={id:stEdit,name:$('stName').value,qty:$('stQty').value,unit:$('stUnit').value,min:$('stMin').value,cat:$('stCat').value,note:$('stNote').value};
+      if(!f.name.trim()){toast('צריך שם');return;}var was=stEdit;f.week=week;
+      call('adminAction',[K,'stockSave',f],function(r){stEdit='';stForm=false;setState(r);toast(was?'נשמר':'הפריט נוסף');});};
+    var sc=$('stCancel');if(sc)sc.onclick=function(){stEdit='';stForm=false;render();};
+    var sd=$('stDel');if(sd)sd.onclick=function(){if(sd.dataset.c){call('adminAction',[K,'stockDelete',{id:stEdit,week:week}],function(r){stEdit='';setState(r);toast('הפריט נמחק');});}else{sd.dataset.c='1';sd.textContent='בטוח למחוק?';setTimeout(function(){if(sd.isConnected){delete sd.dataset.c;sd.textContent='מחיקת הפריט';}},3000);}};
+  }
   var nv=$('invNew');if(nv)nv.onclick=function(){act('invite',{label:$('invLabel').value,slot:$('invSlot').value});toast('נוצר קישור');};
 }
 /* boot: the server already sent the first state with the page */

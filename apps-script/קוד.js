@@ -19,6 +19,8 @@ const SHEETS = {
   Cancelled: ['lessonKey', 'createdAt'],
   Workshops: ['id', 'title', 'date', 'from', 'to', 'seats', 'price', 'desc', 'approve', 'status', 'createdAt', 'who'],
   WsSignups: ['wsId', 'sid', 'token', 'name', 'phone', 'status', 'createdAt'],
+  Inventory: ['id', 'name', 'qty', 'min', 'unit', 'cat', 'note', 'updatedAt', 'alerted'],
+  Recipes:   ['id', 'name', 'parts', 'note', 'createdAt', 'lastMade', 'lastKg'],
   Settings:  ['key', 'value'],
 };
 
@@ -108,7 +110,7 @@ function doGet(e) {
 
 /* ===================== sheet helpers ===================== */
 const SH_ = {};
-const LAZY_SHEETS = ['Workshops', 'WsSignups'];
+const LAZY_SHEETS = ['Workshops', 'WsSignups', 'Inventory', 'Recipes'];
 function sh_(n) {
   if (SH_[n]) return SH_[n];
   let s = ss_().getSheetByName(n);
@@ -157,7 +159,7 @@ function setSetting_(k, v) {
  *  - שינוי ידני בגיליון מופיע באפליקציה תוך CACHE_TTL שניות לכל היותר
  *    (או מיד, עם תפריט "סטודיו DNG ← רענון נתונים" / הפונקציה clearCache).
  */
-const CACHE_TTL = 300, CACHE_CHUNK = 90000, LIST_SHEET = { stu: 'Students', inv: 'Invites', abs: 'Absences', mk: 'Makeups', can: 'Cancelled', ws: 'Workshops', wss: 'WsSignups' };
+const CACHE_TTL = 300, CACHE_CHUNK = 90000, LIST_SHEET = { stu: 'Students', inv: 'Invites', abs: 'Absences', mk: 'Makeups', can: 'Cancelled', ws: 'Workshops', wss: 'WsSignups', stock: 'Inventory', rec: 'Recipes' };
 function cacheVer_(c) { return c.get('dver') || '0'; }
 function cacheGet_() {
   try {
@@ -241,12 +243,12 @@ function fmtD_(iso) { const p = iso.split('-'); return (+p[2]) + '.' + (+p[1]); 
 function load_(fresh) {
   let ver = null;
   if (!fresh) {
-    const hit = cacheGet_(); if (hit && hit.ws && hit.wss) return hit;
+    const hit = cacheGet_(); if (hit && hit.ws && hit.wss && hit.stock && hit.rec) return hit;
     try { ver = cacheVer_(CacheService.getScriptCache()); } catch (e) {}
   }
   const D = {
     stu: rows_('Students'), inv: rows_('Invites'), abs: rows_('Absences'), mk: rows_('Makeups'),
-    can: rows_('Cancelled'), ws: rows_('Workshops'), wss: rows_('WsSignups'), set: settings_(),
+    can: rows_('Cancelled'), ws: rows_('Workshops'), wss: rows_('WsSignups'), stock: rows_('Inventory'), rec: rows_('Recipes'), set: settings_(),
   };
   if (fresh) bumpCache_();
   cachePut_(D, fresh ? null : ver);
@@ -274,11 +276,11 @@ function credits_(D, token) {
   return c;
 }
 function pendingMkCount_(D, token) { return D.mk.filter(m => m.token === token && m.status === 'pending' && !ended_(m.lessonKey)).length; }
-function notify_(D, subject, body) {
+function notify_(D, subject, body, linkLabel) {
   try {
     const to = D.set.NOTIFY_EMAIL || Session.getEffectiveUser().getEmail();
     const url = ScriptApp.getService().getUrl();
-    MailApp.sendEmail(to, subject, body + (url ? '\n\nלאישור: ' + url + '?admin=' + D.set.ADMIN_KEY : ''));
+    MailApp.sendEmail(to, subject, body + (url ? '\n\n' + (linkLabel || 'לאישור') + ': ' + url + '?admin=' + D.set.ADMIN_KEY : ''));
   } catch (e) { console.log('mail failed: ' + e); }
 }
 
@@ -395,7 +397,8 @@ function adminState_(D, adminKey, weekOff) {
     status: w.status, link: base ? base + '?w=' + w.id : '',
     signups: D.wss.filter(x => x.wsId === w.id && x.status !== 'no').map(x => ({ sid: x.sid, name: x.name, phone: x.phone, status: x.status, student: !!x.token })) }));
   const pendingWs = D.wss.filter(x => x.status === 'pending').map(x => { const w = D.ws.find(y => y.id === x.wsId); return w && !wsEnded_(w) ? { sid: x.sid, name: x.name, phone: x.phone, title: w.title, date: w.date, free: wsFree_(D, w) } : null; }).filter(Boolean);
-  return { state: 'ok', slots: SLOTS, seats: seats_(D), wk, pendingJoin, pendingMk, pendingWs, week, students, invites, workshops, hasUrl: !!url };
+  const stock = D.stock.map(stockPub_).sort((a, b) => (a.cat || '\uffff').localeCompare(b.cat || '\uffff', 'he') || a.name.localeCompare(b.name, 'he'));
+  return { state: 'ok', slots: SLOTS, seats: seats_(D), wk, pendingJoin, pendingMk, pendingWs, week, students, invites, workshops, stock, recipes: D.rec.map(recPub_).sort((a, b) => a.name.localeCompare(b.name, 'he')), hasUrl: !!url };
 }
 function adminAction(adminKey, act, p) {
   p = p || {};
@@ -440,6 +443,7 @@ function adminAction(adminKey, act, p) {
       const w = D.ws.find(x => x.id === clean_(p.id)), name = String(p.name || '').trim().slice(0, 40);
       if (w && name) addRow_(D, 'wss', { wsId: w.id, sid: randomToken_(12), token: '', name, phone: String(p.phone || '').trim().slice(0, 20), status: 'ok', createdAt: Date.now() });
     }
+    else if (act.indexOf('stock') === 0) stockAction_(D, act, p);
     saveCache_(D);
     return adminState_(D, adminKey, p.week || 0);
   });
@@ -524,6 +528,82 @@ function wsCancel(id, token) {
     notify_(D, 'ביטול הרשמה לסדנה: ' + x.name, x.name + ' ביטל/ה את ההרשמה לסדנה "' + w.title + '" (' + wsDateTxt_(w) + ').');
     return studentState_(D, token);
   });
+}
+
+/* ===================== inventory (מלאי) =====================
+ * כל פריט: שם, כמות, מינימום, יחידה (ק"ג, שקית, בקבוק…) וקטגוריה (לא חובה).
+ * פריט "חסר" כשהכמות הגיעה למינימום או ירדה ממנו (ומינימום > 0).
+ * ברגע שפריט יורד למינימום נשלח מייל אחד (alerted=1), ושוב רק אחרי שחזר מעל המינימום.
+ */
+function num_(x) { const n = parseFloat(String(x == null ? '' : x).replace(',', '.')); return isFinite(n) ? Math.round(n * 1000) / 1000 : 0; }
+function stockLow_(r) { const m = num_(r.min); return m > 0 && num_(r.qty) <= m; }
+function stockPub_(r) { return { id: r.id, name: r.name, qty: num_(r.qty), min: num_(r.min), unit: r.unit, cat: r.cat, note: r.note, low: stockLow_(r), updatedAt: +r.updatedAt || 0 }; }
+function stockTxt_(r) { return r.name + ': יש ' + num_(r.qty) + (r.unit ? ' ' + r.unit : '') + ' (מינימום ' + num_(r.min) + ')'; }
+function stockOrderList_(D) { return D.stock.filter(stockLow_).sort((a, b) => a.name.localeCompare(b.name, 'he')).map(r => '• ' + stockTxt_(r)).join('\n'); }
+/** אחרי שינוי כמות: מייל כשפריט ירד עכשיו למינימום. */
+function stockCheck_(D, recs) {
+  const fell = [];
+  recs.forEach(r => {
+    const low = stockLow_(r);
+    if (low && r.alerted !== '1') { setRow_(D, 'stock', r, { alerted: '1' }); fell.push(r); }
+    else if (!low && r.alerted === '1') setRow_(D, 'stock', r, { alerted: '' });
+  });
+  if (fell.length) notify_(D, 'מלאי: צריך להזמין ' + fell.map(r => r.name).join(', '),
+    'ירד למינימום:\n' + fell.map(r => '• ' + stockTxt_(r)).join('\n') + '\n\nכל מה שצריך להזמין עכשיו:\n' + stockOrderList_(D), 'למלאי');
+}
+/* מתכון גלזורה: רשימת חומרים מהמלאי עם אחוז מהמשקל היבש (כמו במתכוני גלזורה – יכול לעבור 100% עם תוספים).
+ * "הכנתי X ק"ג" מוריד מכל חומר X × אחוז / 100 ק"ג (או בגרמים, אם יחידת החומר היא גרם). */
+function recParts_(rr) { try { const a = JSON.parse(rr.parts || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+function isGram_(unit) { return /^(גרם|ג'|ג|גר|gr|g)$/i.test(String(unit || '').trim().replace(/["׳.]/g, '')); }
+function recNeed_(r, kg, pct) { return num_(kg * num_(pct) / 100 * (isGram_(r.unit) ? 1000 : 1)); }
+function recPub_(rr) { return { id: rr.id, name: rr.name, note: rr.note, parts: recParts_(rr), lastMade: +rr.lastMade || 0, lastKg: num_(rr.lastKg) }; }
+function stockFields_(p) {
+  const name = String(p.name || '').trim().slice(0, 60);
+  if (!name) throw new Error('צריך שם לפריט');
+  return { name, qty: Math.max(0, num_(p.qty)), min: Math.max(0, num_(p.min)), unit: String(p.unit || '').trim().slice(0, 20),
+    cat: String(p.cat || '').trim().slice(0, 30), note: String(p.note || '').trim().slice(0, 140), updatedAt: Date.now() };
+}
+function stockAction_(D, act, p) {
+  const r = p.id ? D.stock.find(x => x.id === clean_(p.id)) : null;
+  if (act === 'stockSave') {
+    const f = stockFields_(p);
+    if (D.stock.some(x => x !== r && x.name === f.name)) throw new Error('כבר יש פריט בשם הזה');
+    stockCheck_(D, [r ? (setRow_(D, 'stock', r, f), r) : addRow_(D, 'stock', Object.assign({ id: randomToken_(10), alerted: '' }, f))]);
+  }
+  else if (act === 'stockDelta' && r) { setRow_(D, 'stock', r, { qty: Math.max(0, num_(num_(r.qty) + num_(p.delta))), updatedAt: Date.now() }); stockCheck_(D, [r]); }
+  else if (act === 'stockSet' && r) { setRow_(D, 'stock', r, { qty: Math.max(0, num_(p.qty)), updatedAt: Date.now() }); stockCheck_(D, [r]); }
+  else if (act === 'stockDelete' && r) {
+    if (D.rec.some(x => recParts_(x).some(y => y.id === r.id))) throw new Error('החומר נמצא במתכון. קודם להוציא אותו מהמתכון');
+    delRow_(D, 'stock', r);
+  }
+  else if (act === 'stockRecipeSave') {
+    const name = String(p.name || '').trim().slice(0, 60), rr = p.id ? D.rec.find(x => x.id === clean_(p.id)) : null;
+    if (!name) throw new Error('צריך שם למתכון');
+    const seen = {}, parts = (Array.isArray(p.parts) ? p.parts : []).map(x => ({ id: clean_(x.id), pct: num_(x.pct) }))
+      .filter(x => x.pct > 0 && D.stock.some(r => r.id === x.id) && !seen[x.id] && (seen[x.id] = 1));
+    if (!parts.length) throw new Error('צריך לפחות חומר אחד עם אחוז');
+    const f = { name, parts: JSON.stringify(parts), note: String(p.note || '').trim().slice(0, 300) };
+    if (rr) setRow_(D, 'rec', rr, f); else addRow_(D, 'rec', Object.assign({ id: randomToken_(10), createdAt: Date.now(), lastMade: '', lastKg: '' }, f));
+  }
+  else if (act === 'stockRecipeDelete' && p.id) { const rr = D.rec.find(x => x.id === clean_(p.id)); if (rr) delRow_(D, 'rec', rr); }
+  else if (act === 'stockBatch' && p.id) {
+    const rr = D.rec.find(x => x.id === clean_(p.id)), kg = num_(p.kg);
+    if (!rr) throw new Error('המתכון לא נמצא');
+    if (!(kg > 0)) throw new Error('צריך כמות להכנה');
+    const touched = [];
+    recParts_(rr).forEach(x => {
+      const r = D.stock.find(y => y.id === x.id); if (!r) return;
+      setRow_(D, 'stock', r, { qty: Math.max(0, num_(num_(r.qty) - recNeed_(r, kg, x.pct))), updatedAt: Date.now() });
+      touched.push(r);
+    });
+    setRow_(D, 'rec', rr, { lastMade: Date.now(), lastKg: kg });
+    stockCheck_(D, touched);
+  }
+  else if (act === 'stockMail') {
+    const list = stockOrderList_(D);
+    if (!list) throw new Error('אין כרגע מה להזמין');
+    notify_(D, 'מלאי: רשימת הזמנה', 'צריך להזמין:\n' + list, 'למלאי');
+  }
 }
 
 /** מעדכן את כתובת האפליקציה לקישורים חדשים */

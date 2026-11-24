@@ -15,7 +15,7 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
    - Files in `apps-script/`: `קוד.js` (server, shown as Code.gs in the editor: setup, doGet, studentState, register, setAbsence, requestMakeup,
      cancelMakeup, adminState, adminAction) and `Index.html` (whole client UI, vanilla JS, `google.script.run`).
    - Data lives in a Google Sheet ("שיעורים – סטודיו DNG") with tabs: Students, Invites, Absences,
-     Makeups, Cancelled, Workshops, WsSignups, Settings (the two workshop tabs are created automatically on first use). All cells are text. Settings holds ADMIN_KEY, SEATS (8),
+     Makeups, Cancelled, Workshops, WsSignups, Inventory, Recipes, Settings (the workshop, Inventory and Recipes tabs are created automatically on first use). All cells are text. Settings holds ADMIN_KEY, SEATS (8),
      NOTIFY_EMAIL, APP_URL (base for invite links; must be https://talpens.github.io/dng/site/).
    - Source lives in `apps-script/` (pulled with clasp). The Sheet ID is kept in Script Properties (SHEET_ID), not in code.
 2. **App shell: `site/`** (static, no build). `site/index.html` full-screens the web app in an iframe,
@@ -44,6 +44,12 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
   price/description, optional "needs my approval", optional "students only"; "duplicate" copies one to a new date). Separate from regular lessons and credits. Approved students
   see upcoming open workshops in their app; anyone can sign up (name + phone) from the workshop link `?w=<id>`.
   A pending sign-up holds a seat. Students can cancel until it starts; Tal can add/remove people and close sign-up.
+- Inventory (מלאי, admin tab): items with qty, minimum, unit, optional category. An item is "to order" when min > 0 and
+  qty <= min. When an item drops to its minimum Tal gets one email (Inventory.alerted), again only after it went back above.
+  The "צריך להזמין" list can be sent by WhatsApp or email.
+- Glaze recipes (מתכוני גלזורות): Tal mixes glazes himself. A recipe = inventory materials with % of dry weight (may exceed
+  100% with additives). "הכנתי X ק"ג" deducts X × % / 100 kg from each material (×1000 if the material's unit is grams),
+  never below 0. A material used in a recipe can't be deleted.
 
 ## Secrets / privacy
 - Never commit the admin key, the Sheet ID, student names/phones, or tokens. This repo is public.
