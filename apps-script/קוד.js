@@ -18,7 +18,7 @@ const SHEETS = {
   Makeups:   ['token', 'lessonKey', 'status', 'createdAt', 'decidedAt'],
   Cancelled: ['lessonKey', 'createdAt'],
   Workshops: ['id', 'title', 'date', 'from', 'to', 'seats', 'price', 'desc', 'approve', 'status', 'createdAt', 'who'],
-  WsSignups: ['wsId', 'sid', 'token', 'name', 'phone', 'status', 'createdAt', 'payUrl', 'payDesc', 'paid'],
+  WsSignups: ['wsId', 'sid', 'token', 'name', 'phone', 'status', 'createdAt', 'payUrl', 'payDesc', 'paid', 'company', 'taxId', 'email'],
   Inventory: ['id', 'name', 'qty', 'min', 'unit', 'cat', 'note', 'updatedAt', 'alerted'],
   Recipes:   ['id', 'name', 'parts', 'note', 'createdAt', 'lastMade', 'lastKg'],
   Teachers:  ['id', 'name', 'phone', 'slots', 'createdAt'],
@@ -414,7 +414,7 @@ function adminState_(D, adminKey, weekOff, month) {
   const base = D.set.APP_URL || url;
   const workshops = D.ws.slice().sort(wsSort_).filter(w => !wsEnded_(w) || w.date >= addDays_(ilNow_().date, -14)).map(w => Object.assign(wsPub_(D, w, ''), {
     status: w.status, link: base ? base + '?w=' + w.id : '',
-    signups: D.wss.filter(x => x.wsId === w.id && x.status !== 'no').map(x => ({ sid: x.sid, name: x.name, phone: x.phone, status: x.status, student: !!x.token, payUrl: x.payUrl || '', paid: x.paid === '1' })) }));
+    signups: D.wss.filter(x => x.wsId === w.id && x.status !== 'no').map(x => ({ sid: x.sid, name: x.name, phone: x.phone, status: x.status, student: !!x.token, payUrl: x.payUrl || '', company: x.company ? x.company + ' · ח.פ ' + x.taxId + ' · ' + x.email : '', paid: x.paid === '1' })) }));
   const pendingWs = D.wss.filter(x => x.status === 'pending').map(x => { const w = D.ws.find(y => y.id === x.wsId); return w && !wsEnded_(w) ? { sid: x.sid, name: x.name, phone: x.phone, title: w.title, date: w.date, free: wsFree_(D, w) } : null; }).filter(Boolean);
   const stock = D.stock.map(stockPub_).sort((a, b) => (a.cat || '\uffff').localeCompare(b.cat || '\uffff', 'he') || a.name.localeCompare(b.name, 'he'));
   return { state: 'ok', slots: SLOTS, seats: seats_(D), wk, pendingJoin, pendingMk, pendingWs, week, students, invites, workshops, stock, recipes: D.rec.map(recPub_).sort((a, b) => a.name.localeCompare(b.name, 'he')),
@@ -589,12 +589,16 @@ function wsSignup(id, token, f) {
     if (wsFree_(D, w) <= 0) throw new Error('אין יותר מקומות בסדנה');
     const status = w.approve === '1' ? 'pending' : 'ok';
     const rec = { wsId: id, sid: randomToken_(12), token, name, phone, status, createdAt: Date.now() };
+    if (!token && String(f.company || '').trim()) { // תשלום על ידי חברה: שם חברה, ח.פ ומייל
+      rec.company = String(f.company).trim().slice(0, 60); rec.taxId = String(f.taxId || '').replace(/\D/g, '').slice(0, 12); rec.email = String(f.email || '').trim().slice(0, 60);
+      if (!rec.taxId || !/^\S+@\S+\.\S+$/.test(rec.email)) throw new Error('לתשלום על ידי חברה צריך ח.פ ומייל תקין');
+    }
     // תשלום: למי שנרשם מקישור הסדנה ויש מחיר בסדנה – נוצר קישור תשלום אישי ב-Morning. אם נכשל, ההרשמה נשמרת בלי קישור.
     const amount = token ? 0 : num_(String(w.price || '').replace(/[^\d.,]/g, ''));
     if (amount > 0 && mProps_().id) {
       try {
-        const desc = 'סדנה ' + w.title + ' ' + fmtD_(w.date) + ' – ' + name + ' (' + rec.sid.slice(0, 4) + ')';
-        rec.payUrl = mCreateGroupLink_(desc, amount).url; rec.payDesc = desc;
+        const desc = 'סדנה ' + w.title + ' ' + fmtD_(w.date) + ' – ' + (rec.company ? rec.company + ' (' + name + ')' : name) + ' (' + rec.sid.slice(0, 4) + ')';
+        rec.payUrl = mCreateGroupLink_(desc, amount, rec.company).url; rec.payDesc = desc;
       } catch (e) { console.log('ws pay link failed: ' + e.message); }
     }
     addRow_(D, 'wss', rec);
@@ -1023,7 +1027,7 @@ function mCreateLink_(D, m, st, n, price, payId) {
   return d.url;
 }
 /** קישור תשלום קבוע ב-Morning (כמו "קישור לתשלום" באתר): כמה אנשים יכולים לשלם בו. מחזיר { id, url }. */
-function mCreateGroupLink_(desc, price) {
+function mCreateGroupLink_(desc, price, company) {
   // Morning דורש סוג מסמך (320 = חשבונית מס/קבלה, כמו כל המסמכים בחשבון) ותוסף סליקה (אשראי, סוג 12200).
   // לא ידוע בדיוק באיזו צורה הוא מצפה לשדות האלה, אז מנסים כמה צורות בסדר, ועוברות הלאה רק על שגיאות של סוג מסמך/תוסף.
   let full = null; try { full = (mFetch_('get', '/documents/info?type=320').paymentPlugins || [])[0] || null; } catch (e) { console.log('documents/info failed: ' + e.message); }
@@ -1031,7 +1035,7 @@ function mCreateGroupLink_(desc, price) {
   const today = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
   const mk = v => {
     const data = { description: desc, documentType: 320, documentVatType: 0, notify: true, addClient: false, maxPayments: 1, maxQuantity: 1, themeId: 1002,
-      openAmount: false, showSearchEngines: false, enablePredefinedPaymentAmounts: false, predefinedPaymentAmounts: [], requireTaxId: false };
+      openAmount: false, showSearchEngines: false, enablePredefinedPaymentAmounts: false, predefinedPaymentAmounts: [], requireTaxId: !!company };
     if (v.date) data.date = today;
     if (v.plugins === 'none') data.plugins = [];
     else if (v.plugins === 'full' && full) data.plugins = [full];

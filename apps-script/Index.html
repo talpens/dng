@@ -199,12 +199,14 @@ function wsPublicView(){
   else if(w.free<=0)body='<div class="card big">כל המקומות בסדנה נתפסו. אפשר לפנות לסטודיו לרשימת המתנה.</div>';
   else body='<div class="card"><h2>הרשמה</h2><div class="field"><label>שם מלא</label><input id="wName" maxlength="40"></div>'+
     '<div class="field"><label>טלפון</label><input id="wPhone" inputmode="tel" maxlength="20"></div>'+
+    (w.price?'<label class="chk"><input type="checkbox" id="wCo"> התשלום על ידי חברה</label><div id="wCoBox" style="display:none"><div class="field"><label>שם החברה</label><input id="wCoN" maxlength="60"></div><div class="field"><label>ח.פ / ע.מ</label><input id="wCoId" inputmode="numeric" maxlength="12"></div><div class="field"><label>מייל לחשבונית</label><input id="wCoM" type="email" maxlength="60"></div></div>':'')+
     '<button class="btn pri" id="wSend" style="width:100%">'+(w.approve?'שליחת בקשה':'הרשמה לסדנה')+'</button>'+
     (w.approve?'<div class="muted" style="margin-top:8px">ההרשמה תיכנס לתוקף אחרי אישור של הסטודיו.</div>':'')+'</div>';
   return wsCard(w,'')+body;
 }
 function bindWsPublic(){
-  var b=$('wSend');if(b)b.onclick=function(){var f={name:$('wName').value,phone:$('wPhone').value};
+  var c=$('wCo');if(c)c.onchange=function(){$('wCoBox').style.display=c.checked?'block':'none';};
+  var b=$('wSend');if(b)b.onclick=function(){var f={name:$('wName').value,phone:$('wPhone').value};var co=$('wCo');if(co&&co.checked){f.company=$('wCoN').value;f.taxId=$('wCoId').value;f.email=$('wCoM').value;if(!f.company.trim()||!f.taxId.trim()||!f.email.trim()){toast('צריך שם חברה, ח.פ ומייל');return;}}
     if(!f.name.trim()||!f.phone.trim()){toast('צריך שם וטלפון');return;}call('wsSignup',[BOOT.ws,'',f],setState);};
 }
 function bindStudent(){
@@ -261,7 +263,7 @@ function adminView(){
       '<div class="acts"><button class="btn pri" id="wsSave">'+(wsEdit?'שמירה':'פתיחת סדנה')+'</button>'+(wsEdit||wsCopy?'<button class="btn" id="wsCancelEdit">ביטול עריכה</button>':'<span></span>')+'</div></div>'+
       (S.workshops.length?S.workshops.map(function(w){
         var wa=w.link?'https://wa.me/?text='+encodeURIComponent('סדנה בסטודיו DNG: '+w.title+', יום '+dayName(w.date)+' '+fmtD(w.date)+' '+w.from+'–'+w.to+(w.price?' · '+w.price:'')+'. להרשמה: '+w.link):'';
-        var li=w.signups.map(function(x){return '<div class="li"><span>'+esc(x.name)+' <span class="muted">'+esc(x.phone)+'</span>'+(x.student?' <span class="tag">תלמיד/ה</span>':'')+(x.payUrl?(x.paid?' <span class="tag ok">שילם/ה ✓</span>':' <span class="tag wait">ממתין לתשלום</span> <button class="mini" data-cp="'+esc(x.payUrl)+'">העתקת קישור</button>'):'')+'</span><span>'+
+        var li=w.signups.map(function(x){return '<div class="li"><span>'+esc(x.name)+' <span class="muted">'+esc(x.phone)+'</span>'+(x.student?' <span class="tag">תלמיד/ה</span>':'')+(x.company?'<div class="muted">חברה: '+esc(x.company)+'</div>':'')+(x.payUrl?(x.paid?' <span class="tag ok">שילם/ה ✓</span>':' <span class="tag wait">ממתין לתשלום</span> <button class="mini" data-cp="'+esc(x.payUrl)+'">העתקת קישור</button>'):'')+'</span><span>'+
           (x.status==='pending'?'<span class="tag wait">ממתין</span> <button class="mini" data-ws="wsOk" data-sid="'+x.sid+'">אישור</button> ':'')+
           '<button class="mini" data-ws="wsNo" data-sid="'+x.sid+'">הסר</button></span></div>';}).join('');
         return '<div class="card ws'+(w.ended?' lesson past':'')+'"><div class="top"><div><div class="day">'+esc(w.title)+'</div><div class="when">'+wsWhen(w)+'</div></div>'+
