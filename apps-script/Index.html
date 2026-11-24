@@ -124,6 +124,7 @@ function render(){
   var app=$('app');
   if(!S){app.innerHTML='<div class="empty">טוען…</div>';return;}
   if(ADMIN){app.innerHTML=adminView();bindAdmin();return;}
+  if(S.state==='teacher'||S.state==='tinvalid'){app.innerHTML=teacherPageView();return;}
   if(S.state==='ws'||S.state==='wsinvalid'){app.innerHTML=wsPublicView();bindWsPublic();return;}
   app.innerHTML=studentView();bindStudent();
 }
@@ -291,6 +292,18 @@ function adminView(){
   return tabs+body;
 }
 /* ---------------- teachers (מורים) ---------------- */
+function teacherPageView(){
+  $('who').innerHTML='';
+  if(S.state==='tinvalid')return '<div class="card big">הקישור הזה לא תקין. בקשו מהסטודיו קישור חדש.</div>';
+  var W=S.workshops||[];
+  return '<div class="card big"><h2>שלום '+esc(S.name)+'</h2><div class="muted">הסדנאות של הסטודיו (לצפייה בלבד)</div></div>'+
+    (W.length?W.map(function(w){var li=w.signups.map(function(x){return '<div class="li"><span>'+esc(x.name)+'</span>'+(x.status==='pending'?'<span class="tag wait">ממתין</span>':'')+'</div>';}).join('');
+      return '<div class="card ws'+(w.ended?' lesson past':'')+'"><div class="top"><div><div class="day">'+esc(w.title)+' <span class="tag">סדנה</span></div><div class="when">'+wsWhen(w)+'</div></div>'+
+        '<div class="seats"><b>'+(w.seats-w.free)+'/'+w.seats+'</b><small>נרשמו</small></div></div>'+
+        (w.price?'<div class="muted" style="margin-top:6px">מחיר: '+esc(w.price)+'</div>':'')+(w.desc?'<div class="desc">'+esc(w.desc)+'</div>':'')+
+        '<div style="margin-top:6px">'+(li||'<div class="empty">עוד אין נרשמים</div>')+'</div>'+
+        (w.open||w.ended?'':'<div style="margin-top:6px"><span class="tag off">ההרשמה סגורה</span></div>')+'</div>';}).join(''):'<div class="card empty">אין סדנאות כרגע</div>');
+}
 function weekTeacher(l){
   var T=S.teachers||[];if(!T.length)return '';
   var opts='<option value="">'+(l.regular?'קבוע: '+esc(l.regular):'אין מורה קבוע')+'</option>'+T.map(function(t){return '<option value="'+t.id+'"'+(t.id===l.sub?' selected':'')+'>מחליף/ה: '+esc(t.name)+'</option>';}).join('');
@@ -308,7 +321,7 @@ function teachersView(){
       '<div class="acts"><button class="btn pri" id="tcSave">'+(tcEdit==='new'?'הוספה':'שמירה')+'</button><button class="btn" id="tcCancel">ביטול</button>'+(tcEdit!=='new'?'<button class="btn" id="tcDel">מחיקת המורה</button>':'')+'</div></div>'
     :'<button class="btn pri" id="tcNew" style="width:100%;margin:0 0 10px">+ הוספת מורה</button>';
   var list='<div class="card"><h2>מורים ('+T.length+')</h2>'+(T.length?T.map(function(t){
-    return '<div class="li"><div style="flex:1;min-width:140px"><b>'+esc(t.name)+'</b><div class="muted">'+(t.phone?esc(t.phone)+' · ':'')+(t.slots.length?t.slots.map(slotName).join(', '):'בלי שיעור קבוע')+'</div></div><button class="mini" data-tced="'+t.id+'">עריכה</button></div>';}).join(''):'<div class="empty">עוד אין מורים</div>')+'</div>';
+    return '<div class="li"><div style="flex:1;min-width:140px"><b>'+esc(t.name)+'</b><div class="muted">'+(t.phone?esc(t.phone)+' · ':'')+(t.slots.length?t.slots.map(slotName).join(', '):'בלי שיעור קבוע')+'</div></div>'+(t.link?'<button class="mini" data-tcopy="'+esc(t.link)+'">העתקת קישור</button> ':'')+'<button class="mini" data-tced="'+t.id+'">עריכה</button></div>';}).join(''):'<div class="empty">עוד אין מורים</div>')+'</div>';
   return grid+form+list;
 }
 function bindTeachers(act){
@@ -319,6 +332,9 @@ function bindTeachers(act){
   var sv=$('tcSave');if(sv)sv.onclick=function(){var f={id:tcEdit==='new'?'':tcEdit,name:$('tcName').value,phone:$('tcPhone').value,week:week};
     if(!f.name.trim()){toast('צריך שם');return;}var was=tcEdit!=='new';
     call('adminAction',[BOOT.admin,'tchSave',f],function(r){tcEdit='';setState(r);toast(was?'נשמר':'המורה נוסף/ה');});};
+  document.querySelectorAll('[data-tcopy]').forEach(function(b){b.onclick=function(){var u=b.dataset.tcopy;
+    function old(){var t=document.createElement('textarea');t.value=u;document.body.appendChild(t);t.select();try{document.execCommand('copy');toast('הקישור הועתק');}catch(e){toast('לא הצלחתי להעתיק');}t.remove();}
+    try{navigator.clipboard.writeText(u).then(function(){toast('הקישור הועתק');},old);}catch(e){old();}};});
   var d=$('tcDel');if(d)d.onclick=function(){if(d.dataset.c){call('adminAction',[BOOT.admin,'tchDelete',{id:tcEdit,week:week}],function(r){tcEdit='';setState(r);toast('המורה נמחק/ה');});}else{d.dataset.c='1';d.textContent='בטוח למחוק?';setTimeout(function(){if(d.isConnected){delete d.dataset.c;d.textContent='מחיקת המורה';}},3000);}};
 }
 function adminWsWeekCard(w){
@@ -596,6 +612,7 @@ function bindAdmin(){
 /* boot: the server already sent the first state with the page */
 if(BOOT.state)setState(BOOT.state);
 else if(ADMIN)call('adminState',[BOOT.admin,0],setState);
+else if(BOOT.tch)call('teacherState',[BOOT.tch],setState);
 else if(BOOT.token)call('studentState',[BOOT.token],setState);
 else if(BOOT.ws)call('wsPublicState',[BOOT.ws],setState);
 else{S={state:'invalid'};render();}
