@@ -17,7 +17,7 @@ const SHEETS = {
   Absences:  ['token', 'lessonKey', 'createdAt'],
   Makeups:   ['token', 'lessonKey', 'status', 'createdAt', 'decidedAt'],
   Cancelled: ['lessonKey', 'createdAt'],
-  Workshops: ['id', 'title', 'date', 'from', 'to', 'seats', 'price', 'desc', 'approve', 'status', 'createdAt'],
+  Workshops: ['id', 'title', 'date', 'from', 'to', 'seats', 'price', 'desc', 'approve', 'status', 'createdAt', 'who'],
   WsSignups: ['wsId', 'sid', 'token', 'name', 'phone', 'status', 'createdAt'],
   Settings:  ['key', 'value'],
 };
@@ -459,7 +459,7 @@ function wsFree_(D, w) { return Math.max(0, (+w.seats || 0) - wsTaken_(D, w)); }
 function wsPub_(D, w, token) {
   const me = token ? D.wss.find(x => x.wsId === w.id && x.token === token && x.status !== 'no') : null;
   return { id: w.id, title: w.title, date: w.date, from: w.from, to: w.to, seats: +w.seats || 0, price: w.price, desc: w.desc,
-    approve: w.approve === '1', open: w.status === 'open', free: wsFree_(D, w), started: wsStarted_(w), ended: wsEnded_(w), mine: me ? me.status : '' };
+    approve: w.approve === '1', studentsOnly: w.who === 'students', open: w.status === 'open', free: wsFree_(D, w), started: wsStarted_(w), ended: wsEnded_(w), mine: me ? me.status : '' };
 }
 function wsFields_(p) {
   const hm = s => /^\d{1,2}:\d{2}$/.test(String(s || '')) ? ('0' + s).slice(-5) : '';
@@ -468,7 +468,7 @@ function wsFields_(p) {
   if (!title || !date || !from || !to) throw new Error('צריך שם, תאריך ושעות');
   if (to <= from) throw new Error('שעת הסיום צריכה להיות אחרי שעת ההתחלה');
   if (!(+p.seats > 0)) throw new Error('צריך מספר מקומות');
-  return { title, date, from, to, seats, price: String(p.price || '').trim().slice(0, 30), desc: String(p.desc || '').trim().slice(0, 400), approve: p.approve ? '1' : '' };
+  return { title, date, from, to, seats, price: String(p.price || '').trim().slice(0, 30), desc: String(p.desc || '').trim().slice(0, 400), approve: p.approve ? '1' : '', who: p.studentsOnly ? 'students' : '' };
 }
 function wsDateTxt_(w) { return fmtD_(w.date) + ' ' + w.from + '–' + w.to; }
 function wsDayName_(iso) { return ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'][new Date(iso + 'T12:00:00Z').getUTCDay()]; }
@@ -495,6 +495,7 @@ function wsSignup(id, token, f) {
       if (D.wss.some(x => x.wsId === id && x.token === token && x.status !== 'no')) throw new Error('כבר נרשמת לסדנה הזו');
       name = st.name; phone = st.phone;
     } else {
+      if (w.who === 'students') throw new Error('הסדנה הזו פתוחה רק לתלמידי הסטודיו');
       name = String(f.name || '').trim().slice(0, 40); phone = String(f.phone || '').trim().slice(0, 20);
       if (!name || !phone) throw new Error('צריך שם וטלפון');
       const digits = s => String(s).replace(/\D/g, '');

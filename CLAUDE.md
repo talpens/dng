@@ -41,7 +41,7 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
 - Free seats = SEATS − regulars + absent − approved makeups (0 if the lesson is cancelled).
 - Makeup requests need a free seat and an available credit; Tal approves.
 - Workshops (סדנאות): one-off events Tal opens from the admin "סדנאות" tab (name, date, hours, seats, optional
-  price/description, optional "needs my approval"). Separate from regular lessons and credits. Approved students
+  price/description, optional "needs my approval", optional "students only"; "duplicate" copies one to a new date). Separate from regular lessons and credits. Approved students
   see upcoming open workshops in their app; anyone can sign up (name + phone) from the workshop link `?w=<id>`.
   A pending sign-up holds a seat. Students can cancel until it starts; Tal can add/remove people and close sign-up.
 

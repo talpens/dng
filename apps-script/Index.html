@@ -70,7 +70,7 @@ var $=function(id){return document.getElementById(id);};
 function esc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function toast(m){var t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(function(){t.classList.remove('on');},2200);}
 function fmtD(iso){var p=iso.split('-');return (+p[2])+'.'+(+p[1]);}
-var SL={},S=null,week=0,tab='',ADMIN=!!BOOT.admin,wsEdit='';
+var SL={},S=null,week=0,tab='',ADMIN=!!BOOT.admin,wsEdit='',wsCopy=null;
 var DAYS=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
 function dayName(iso){return DAYS[new Date(iso+'T12:00:00Z').getUTCDay()];}
 function wsWhen(w){return 'יום '+dayName(w.date)+' '+fmtD(w.date)+' · <bdi dir="ltr">'+w.from+'–'+w.to+'</bdi>';}
@@ -149,6 +149,7 @@ function wsPublicView(){
   else if(S.done==='pending')body='<div class="card big"><h2>הבקשה נשלחה ✓</h2>הסטודיו יאשר את ההרשמה ויחזור אליך.</div>';
   else if(w.ended)body='<div class="card big">הסדנה הזו כבר התקיימה.</div>';
   else if(!w.open||w.started)body='<div class="card big">ההרשמה לסדנה סגורה.</div>';
+  else if(w.studentsOnly)body='<div class="card big">הסדנה הזו פתוחה רק לתלמידי הסטודיו. נרשמים מתוך הקישור האישי שלך.</div>';
   else if(w.free<=0)body='<div class="card big">כל המקומות בסדנה נתפסו. אפשר לפנות לסטודיו לרשימת המתנה.</div>';
   else body='<div class="card"><h2>הרשמה</h2><div class="field"><label>שם מלא</label><input id="wName" maxlength="40"></div>'+
     '<div class="field"><label>טלפון</label><input id="wPhone" inputmode="tel" maxlength="20"></div>'+
@@ -199,15 +200,16 @@ function adminView(){
           '<div class="muted" style="margin:6px 0 2px">'+coming+' מגיעים מתוך '+S.seats+'</div><div>'+(li||'<div class="empty">אין תלמידים</div>')+'</div>'+
           '<div class="row" style="margin-top:8px"><span></span><button class="btn sm" data-a="cancel" data-k="'+l.key+'">'+(l.cancelled?'החזר שיעור':'בטל שיעור')+'</button></div></div>';}).join('');
   }else if(tab==='ws'){
-    var e=wsEdit?(S.workshops.filter(function(w){return w.id===wsEdit;})[0]||{}):{};
-    body='<div class="card"><h2>'+(wsEdit?'עריכת סדנה':'סדנה חדשה')+'</h2><div class="muted" style="margin-bottom:8px">סדנה חד-פעמית, בנפרד מהשיעורים הקבועים. תלמידים רואים אותה באפליקציה, ואפשר לשלוח קישור לכל אחד.</div>'+
+    var e=wsEdit?(S.workshops.filter(function(w){return w.id===wsEdit;})[0]||{}):wsCopy||{};
+    body='<div class="card"><h2>'+(wsEdit?'עריכת סדנה':wsCopy?'סדנה חדשה (העתק – לבחור תאריך)':'סדנה חדשה')+'</h2><div class="muted" style="margin-bottom:8px">סדנה חד-פעמית, בנפרד מהשיעורים הקבועים. תלמידים רואים אותה באפליקציה, ואפשר לשלוח קישור לכל אחד.</div>'+
       '<div class="field"><label>שם הסדנה</label><input id="wsTitle" maxlength="60" placeholder="למשל: סדנת בורקס" value="'+esc(e.title||'')+'"></div>'+
       '<div class="field"><label>תאריך</label><input id="wsDate" type="date" value="'+esc(e.date||'')+'"></div>'+
       '<div class="two"><div class="field"><label>משעה</label><input id="wsFrom" type="time" value="'+esc(e.from||'10:00')+'"></div><div class="field"><label>עד שעה</label><input id="wsTo" type="time" value="'+esc(e.to||'13:00')+'"></div></div>'+
       '<div class="two"><div class="field"><label>מספר מקומות</label><input id="wsSeats" type="number" min="1" max="99" inputmode="numeric" value="'+esc(e.seats||S.seats)+'"></div><div class="field"><label>מחיר (לא חובה)</label><input id="wsPrice" maxlength="30" placeholder="למשל: 250 ₪" value="'+esc(e.price||'')+'"></div></div>'+
       '<div class="field"><label>תיאור (לא חובה)</label><textarea id="wsDesc" maxlength="400">'+esc(e.desc||'')+'</textarea></div>'+
       '<label class="chk"><input type="checkbox" id="wsApprove"'+(e.approve?' checked':'')+'> כל הרשמה מחכה לאישור שלי</label>'+
-      '<div class="acts"><button class="btn pri" id="wsSave">'+(wsEdit?'שמירה':'פתיחת סדנה')+'</button>'+(wsEdit?'<button class="btn" id="wsCancelEdit">ביטול עריכה</button>':'<span></span>')+'</div></div>'+
+      '<label class="chk"><input type="checkbox" id="wsStudents"'+(e.studentsOnly?' checked':'')+'> רק לתלמידי הסטודיו (בלי הרשמה מבחוץ)</label>'+
+      '<div class="acts"><button class="btn pri" id="wsSave">'+(wsEdit?'שמירה':'פתיחת סדנה')+'</button>'+(wsEdit||wsCopy?'<button class="btn" id="wsCancelEdit">ביטול עריכה</button>':'<span></span>')+'</div></div>'+
       (S.workshops.length?S.workshops.map(function(w){
         var wa=w.link?'https://wa.me/?text='+encodeURIComponent('סדנה בסטודיו DNG: '+w.title+', יום '+dayName(w.date)+' '+fmtD(w.date)+' '+w.from+'–'+w.to+(w.price?' · '+w.price:'')+'. להרשמה: '+w.link):'';
         var li=w.signups.map(function(x){return '<div class="li"><span>'+esc(x.name)+' <span class="muted">'+esc(x.phone)+'</span>'+(x.student?' <span class="tag">תלמיד/ה</span>':'')+'</span><span>'+
@@ -215,14 +217,14 @@ function adminView(){
           '<button class="mini" data-ws="wsNo" data-sid="'+x.sid+'">הסר</button></span></div>';}).join('');
         return '<div class="card ws'+(w.ended?' lesson past':'')+'"><div class="top"><div><div class="day">'+esc(w.title)+'</div><div class="when">'+wsWhen(w)+'</div></div>'+
           '<div class="seats"><b>'+(w.seats-w.free)+'/'+w.seats+'</b><small>נרשמו</small></div></div>'+
-          '<div style="margin-top:6px">'+(w.ended?'<span class="tag off">הסתיימה</span>':w.open?'<span class="tag ok">ההרשמה פתוחה</span>':'<span class="tag off">ההרשמה סגורה</span>')+(w.approve?' <span class="tag">באישור</span>':'')+(w.price?' <span class="price">'+esc(w.price)+'</span>':'')+'</div>'+
+          '<div style="margin-top:6px">'+(w.ended?'<span class="tag off">הסתיימה</span>':w.open?'<span class="tag ok">ההרשמה פתוחה</span>':'<span class="tag off">ההרשמה סגורה</span>')+(w.approve?' <span class="tag">באישור</span>':'')+(w.studentsOnly?' <span class="tag">רק תלמידים</span>':'')+(w.price?' <span class="price">'+esc(w.price)+'</span>':'')+'</div>'+
           '<div style="margin-top:8px">'+(li||'<div class="empty">עוד אין נרשמים</div>')+'</div>'+
           '<div class="two" style="margin-top:6px"><input class="link" style="direction:rtl;font-family:inherit" id="wsN_'+w.id+'" placeholder="הוספה ידנית: שם"><input class="link" id="wsP_'+w.id+'" inputmode="tel" placeholder="טלפון"></div>'+
           '<button class="mini" style="margin-top:6px" data-wsadd="'+w.id+'">+ הוספת נרשם/ת</button>'+
           (w.link?'<input class="link" style="margin-top:8px" readonly value="'+esc(w.link)+'" onclick="this.select()">':'')+
           '<div class="acts">'+(wa?'<a class="btn ok" style="text-align:center;text-decoration:none" target="_blank" href="'+esc(wa)+'">שליחה בוואטסאפ</a>':'<span></span>')+
           '<button class="btn" data-ws="wsToggle" data-id="'+w.id+'">'+(w.open?'סגירת הרשמה':'פתיחת הרשמה')+'</button>'+
-          '<button class="btn" data-wsed="'+w.id+'">עריכה</button><button class="btn" data-wsdel="'+w.id+'">מחיקה</button></div></div>';}).join(''):'<div class="card"><div class="empty">עוד אין סדנאות</div></div>');
+          '<button class="btn" data-wsed="'+w.id+'">עריכה</button><button class="btn" data-wscp="'+w.id+'">שכפול לתאריך אחר</button><button class="btn" data-wsdel="'+w.id+'">מחיקה</button></div></div>';}).join(''):'<div class="card"><div class="empty">עוד אין סדנאות</div></div>');
   }else if(tab==='stu'){
     body='<div class="card"><h2>תלמידים ('+S.students.length+')</h2>'+(S.students.length?S.students.map(function(s){
       return '<div class="li"><div style="flex:1;min-width:140px"><b>'+esc(s.name)+'</b><div class="muted">'+esc(s.phone)+' · יתרה '+s.credits+'</div></div>'+
@@ -248,14 +250,16 @@ function bindAdmin(){
   document.querySelectorAll('[data-slot]').forEach(function(s){s.onchange=function(){act('slot',{token:s.dataset.slot,slot:s.value});};});
   document.querySelectorAll('[data-rm]').forEach(function(b){b.onclick=function(){if(b.dataset.c){act('remove',{token:b.dataset.rm});}else{b.dataset.c='1';b.textContent='בטוח?';setTimeout(function(){if(b.isConnected){delete b.dataset.c;b.textContent='הסר';}},3000);}};});
   document.querySelectorAll('[data-ws]').forEach(function(b){b.onclick=function(){act(b.dataset.ws,{sid:b.dataset.sid,id:b.dataset.id});};});
-  document.querySelectorAll('[data-wsed]').forEach(function(b){b.onclick=function(){wsEdit=b.dataset.wsed;render();window.scrollTo(0,0);};});
+  document.querySelectorAll('[data-wsed]').forEach(function(b){b.onclick=function(){wsEdit=b.dataset.wsed;wsCopy=null;render();window.scrollTo(0,0);};});
+  document.querySelectorAll('[data-wscp]').forEach(function(b){b.onclick=function(){var w=S.workshops.filter(function(x){return x.id===b.dataset.wscp;})[0];
+    wsEdit='';wsCopy=Object.assign({},w,{date:''});render();window.scrollTo(0,0);toast('בוחרים תאריך ושומרים');};});
   document.querySelectorAll('[data-wsdel]').forEach(function(b){b.onclick=function(){if(b.dataset.c){act('wsDelete',{id:b.dataset.wsdel});}else{b.dataset.c='1';b.textContent='למחוק עם כל הנרשמים?';setTimeout(function(){if(b.isConnected){delete b.dataset.c;b.textContent='מחיקה';}},3000);}};});
   document.querySelectorAll('[data-wsadd]').forEach(function(b){b.onclick=function(){var id=b.dataset.wsadd,nm=$('wsN_'+id).value.trim();if(!nm){toast('צריך שם');return;}act('wsAdd',{id:id,name:nm,phone:$('wsP_'+id).value});};});
-  var ce=$('wsCancelEdit');if(ce)ce.onclick=function(){wsEdit='';render();};
+  var ce=$('wsCancelEdit');if(ce)ce.onclick=function(){wsEdit='';wsCopy=null;render();};
   var ws=$('wsSave');if(ws)ws.onclick=function(){var f={id:wsEdit,title:$('wsTitle').value,date:$('wsDate').value,from:$('wsFrom').value,to:$('wsTo').value,
-    seats:$('wsSeats').value,price:$('wsPrice').value,desc:$('wsDesc').value,approve:$('wsApprove').checked};
+    seats:$('wsSeats').value,price:$('wsPrice').value,desc:$('wsDesc').value,approve:$('wsApprove').checked,studentsOnly:$('wsStudents').checked};
     if(!f.title.trim()||!f.date){toast('צריך שם ותאריך');return;}
-    var was=wsEdit;f.week=week;call('adminAction',[K,'wsSave',f],function(r){wsEdit='';setState(r);toast(was?'נשמר':'הסדנה נפתחה');});};
+    var was=wsEdit;f.week=week;call('adminAction',[K,'wsSave',f],function(r){wsEdit='';wsCopy=null;setState(r);toast(was?'נשמר':'הסדנה נפתחה');});};
   var nv=$('invNew');if(nv)nv.onclick=function(){act('invite',{label:$('invLabel').value,slot:$('invSlot').value});toast('נוצר קישור');};
 }
 /* boot: the server already sent the first state with the page */
