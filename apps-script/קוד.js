@@ -23,6 +23,7 @@ const SHEETS = {
   Recipes:   ['id', 'name', 'parts', 'note', 'createdAt', 'lastMade', 'lastKg'],
   Teachers:  ['id', 'name', 'phone', 'slots', 'createdAt'],
   Subs:      ['lessonKey', 'teacherId', 'createdAt'],
+  Payments:  ['id', 'month', 'token', 'name', 'phone', 'slot', 'lessons', 'amount', 'status', 'url', 'docId', 'createdAt', 'paidAt'],
   Settings:  ['key', 'value'],
 };
 
@@ -113,7 +114,7 @@ function doGet(e) {
 
 /* ===================== sheet helpers ===================== */
 const SH_ = {};
-const LAZY_SHEETS = ['Workshops', 'WsSignups', 'Inventory', 'Recipes', 'Teachers', 'Subs'];
+const LAZY_SHEETS = ['Workshops', 'WsSignups', 'Inventory', 'Recipes', 'Teachers', 'Subs', 'Payments'];
 function sh_(n) {
   if (SH_[n]) return SH_[n];
   let s = ss_().getSheetByName(n);
@@ -164,7 +165,7 @@ function setSetting_(k, v) {
  *  - שינוי ידני בגיליון מופיע באפליקציה תוך CACHE_TTL שניות לכל היותר
  *    (או מיד, עם תפריט "סטודיו DNG ← רענון נתונים" / הפונקציה clearCache).
  */
-const CACHE_TTL = 300, CACHE_CHUNK = 90000, LIST_SHEET = { stu: 'Students', inv: 'Invites', abs: 'Absences', mk: 'Makeups', can: 'Cancelled', ws: 'Workshops', wss: 'WsSignups', stock: 'Inventory', rec: 'Recipes', tch: 'Teachers', sub: 'Subs' };
+const CACHE_TTL = 300, CACHE_CHUNK = 90000, LIST_SHEET = { stu: 'Students', inv: 'Invites', abs: 'Absences', mk: 'Makeups', can: 'Cancelled', ws: 'Workshops', wss: 'WsSignups', stock: 'Inventory', rec: 'Recipes', tch: 'Teachers', sub: 'Subs', pay: 'Payments' };
 function cacheVer_(c) { return c.get('dver') || '0'; }
 function cacheGet_() {
   try {
@@ -248,12 +249,12 @@ function fmtD_(iso) { const p = iso.split('-'); return (+p[2]) + '.' + (+p[1]); 
 function load_(fresh) {
   let ver = null;
   if (!fresh) {
-    const hit = cacheGet_(); if (hit && hit.ws && hit.wss && hit.stock && hit.rec && hit.tch && hit.sub) return hit;
+    const hit = cacheGet_(); if (hit && hit.ws && hit.wss && hit.stock && hit.rec && hit.tch && hit.sub && hit.pay) return hit;
     try { ver = cacheVer_(CacheService.getScriptCache()); } catch (e) {}
   }
   const D = {
     stu: rows_('Students'), inv: rows_('Invites'), abs: rows_('Absences'), mk: rows_('Makeups'),
-    can: rows_('Cancelled'), ws: rows_('Workshops'), wss: rows_('WsSignups'), stock: rows_('Inventory'), rec: rows_('Recipes'), tch: rows_('Teachers'), sub: rows_('Subs'), set: settings_(),
+    can: rows_('Cancelled'), ws: rows_('Workshops'), wss: rows_('WsSignups'), stock: rows_('Inventory'), rec: rows_('Recipes'), tch: rows_('Teachers'), sub: rows_('Subs'), pay: rows_('Payments'), set: settings_(),
   };
   if (fresh) bumpCache_();
   cachePut_(D, fresh ? null : ver);
@@ -377,8 +378,8 @@ function cancelMakeup(token, key) {
 
 /* ===================== admin API ===================== */
 function isAdmin_(D, key) { return !!key && clean_(key) === D.set.ADMIN_KEY; }
-function adminState(adminKey, weekOff) { return adminState_(load_(), adminKey, weekOff); }
-function adminState_(D, adminKey, weekOff) {
+function adminState(adminKey, weekOff, month) { return adminState_(load_(), adminKey, weekOff, month); }
+function adminState_(D, adminKey, weekOff, month) {
   if (!isAdmin_(D, adminKey)) return { state: 'denied' };
   const byTok = {}; D.stu.forEach(s => byTok[s.token] = s);
   const nm = t => (byTok[t] && byTok[t].name) || 'ללא שם';
@@ -406,7 +407,7 @@ function adminState_(D, adminKey, weekOff) {
   const pendingWs = D.wss.filter(x => x.status === 'pending').map(x => { const w = D.ws.find(y => y.id === x.wsId); return w && !wsEnded_(w) ? { sid: x.sid, name: x.name, phone: x.phone, title: w.title, date: w.date, free: wsFree_(D, w) } : null; }).filter(Boolean);
   const stock = D.stock.map(stockPub_).sort((a, b) => (a.cat || '\uffff').localeCompare(b.cat || '\uffff', 'he') || a.name.localeCompare(b.name, 'he'));
   return { state: 'ok', slots: SLOTS, seats: seats_(D), wk, pendingJoin, pendingMk, pendingWs, week, students, invites, workshops, stock, recipes: D.rec.map(recPub_).sort((a, b) => a.name.localeCompare(b.name, 'he')),
-    teachers: D.tch.map(tchPub_).sort((a, b) => a.name.localeCompare(b.name, 'he')), hasUrl: !!url };
+    teachers: D.tch.map(tchPub_).sort((a, b) => a.name.localeCompare(b.name, 'he')), pay: payState_(D, month), hasUrl: !!url };
 }
 function adminAction(adminKey, act, p) {
   p = p || {};
@@ -453,8 +454,9 @@ function adminAction(adminKey, act, p) {
     }
     else if (act.indexOf('stock') === 0) stockAction_(D, act, p);
     else if (act.indexOf('tch') === 0) teacherAction_(D, act, p);
+    else if (act.indexOf('pay') === 0) payAction_(D, act, p);
     saveCache_(D);
-    return adminState_(D, adminKey, p.week || 0);
+    return adminState_(D, adminKey, p.week || 0, p.month);
   });
 }
 
@@ -668,3 +670,178 @@ function teacherAction_(D, act, p) {
 
 /** מעדכן את כתובת האפליקציה לקישורים חדשים */
 function setAppUrl() { setSetting_('APP_URL', 'https://talpens.github.io/dng/site/'); console.log('APP_URL: ' + settings_().APP_URL); }
+
+/* ===================== payments (תשלומים חודשיים דרך Morning) =====================
+ * טל בוחר חודש. לכל שיעור קבוע נספרים התאריכים שלו בחודש, בלי שיעורים שבוטלו (אפשר לתקן ביד).
+ * לכל תלמיד/ה: מספר השיעורים שלו/ה בחודש × מחיר לשיעור (Settings.LESSON_PRICE, כולל מע"מ).
+ * "יצירת קישורים" פותח ב-Morning (לשעבר חשבונית ירוקה) דף תשלום אישי לכל תלמיד/ה, עם הסכום כבר בפנים.
+ * אחרי תשלום Morning מוציא חשבונית מס/קבלה ושולח הודעה ל-doPost, והשורה מסומנת "שילם".
+ * מפתחות ה-API נשמרים רק ב-Script Properties (MORNING_ID / MORNING_SECRET), לא בקוד ולא בגיליון.
+ */
+const MONTHS_HE = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+let PAY_MSG_ = '';
+function lessonPrice_(D) { return num_(D.set.LESSON_PRICE) || 180; }
+function monthLabel_(m) { return MONTHS_HE[+m.slice(5, 7) - 1] + ' ' + m.slice(0, 4); }
+function defMonth_() { const n = ilNow_(); return +n.date.slice(8) >= 20 ? addDays_(n.date.slice(0, 8) + '28', 7).slice(0, 7) : n.date.slice(0, 7); }
+function validMonth_(m) { return /^\d{4}-(0[1-9]|1[0-2])$/.test(String(m || '')) ? m : defMonth_(); }
+/** כל התאריכים של שיעור קבוע בחודש, עם מפתח השיעור וסימון אם בוטל. */
+function monthLessons_(D, m, slotId) {
+  const s = slotById_(slotId), out = []; if (!s) return out;
+  for (let d = m + '-01'; d.slice(0, 7) === m; d = addDays_(d, 1)) {
+    const dow = new Date(d + 'T12:00:00Z').getUTCDay();
+    if (dow !== s.dow) continue;
+    const key = addDays_(d, -dow) + '_' + s.id;
+    out.push({ date: d, key, cancelled: cancelled_(D, key) });
+  }
+  return out;
+}
+function stuMonthCount_(D, m, st) { return monthLessons_(D, m, st.slot).filter(l => !l.cancelled && st.since <= l.date).length; }
+function payPub_(r) { return r ? { id: r.id, lessons: +r.lessons || 0, amount: num_(r.amount), status: r.status, url: r.url, paidAt: +r.paidAt || 0 } : null; }
+function payState_(D, month) {
+  const m = validMonth_(month), mp = mProps_(), msg = PAY_MSG_; PAY_MSG_ = '';
+  const slots = SLOTS.map(s => { const L = monthLessons_(D, m, s.id); return { id: s.id, dates: L.map(l => ({ date: l.date, cancelled: l.cancelled })), count: L.filter(l => !l.cancelled).length }; });
+  const seen = {}, students = D.stu.filter(s => s.status === 'approved').map(s => {
+    seen[s.token] = 1;
+    return { token: s.token, name: s.name, phone: s.phone, slot: s.slot, lessons: stuMonthCount_(D, m, s), pay: payPub_(D.pay.find(r => r.month === m && r.token === s.token)) };
+  });
+  D.pay.filter(r => r.month === m && !seen[r.token]).forEach(r => students.push({ token: r.token, name: r.name, phone: r.phone, slot: r.slot, lessons: +r.lessons || 0, gone: true, pay: payPub_(r) }));
+  students.sort((a, b) => (a.slot === b.slot ? 0 : SLOTS.findIndex(x => x.id === a.slot) - SLOTS.findIndex(x => x.id === b.slot)) || a.name.localeCompare(b.name, 'he'));
+  return { month: m, label: monthLabel_(m), price: lessonPrice_(D), slots, students, connected: !!(mp.id && mp.secret), sandbox: mp.sandbox, msg };
+}
+function payAction_(D, act, p) {
+  const r = p.id ? D.pay.find(x => x.id === clean_(p.id)) : null;
+  if (act === 'payPrice') {
+    const v = num_(p.price); if (!(v > 0)) throw new Error('צריך מחיר לשיעור');
+    setSetting_('LESSON_PRICE', String(v)); D.set.LESSON_PRICE = String(v); D._dirty = true;
+  }
+  else if (act === 'payKeys') {
+    const id = String(p.keyId || '').trim(), secret = String(p.secret || '').trim();
+    if (!id || !secret) throw new Error('צריך גם מזהה (ID) וגם סוד (Secret)');
+    const props = PropertiesService.getScriptProperties(), old = mProps_();
+    props.setProperties({ MORNING_ID: id, MORNING_SECRET: secret, MORNING_SANDBOX: p.sandbox ? '1' : '' });
+    props.deleteProperty('MORNING_PLUGIN'); mTokenClear_();
+    try { mPlugin_(); }
+    catch (e) { // המפתח לא עובד – חוזרים למה שהיה
+      if (old.id) props.setProperties({ MORNING_ID: old.id, MORNING_SECRET: old.secret, MORNING_SANDBOX: old.sandbox ? '1' : '' });
+      else { props.deleteProperty('MORNING_ID'); props.deleteProperty('MORNING_SECRET'); }
+      mTokenClear_(); throw e;
+    }
+    D._dirty = true;
+  }
+  else if (act === 'payKeysClear') {
+    const props = PropertiesService.getScriptProperties();
+    ['MORNING_ID', 'MORNING_SECRET', 'MORNING_SANDBOX', 'MORNING_PLUGIN'].forEach(k => props.deleteProperty(k)); mTokenClear_(); D._dirty = true;
+  }
+  else if (act === 'payCreate') {
+    const m = validMonth_(p.month), price = lessonPrice_(D), list = Array.isArray(p.rows) ? p.rows : [];
+    if (!mProps_().id) throw new Error('קודם מחברים את Morning (מפתח API)');
+    let made = 0, skip = 0; const errs = [];
+    list.forEach(x => {
+      const st = D.stu.find(s => s.token === clean_(x.token) && s.status === 'approved'), n = Math.max(0, Math.min(10, Math.floor(+x.lessons || 0)));
+      if (!st || !n) return;
+      const ex = D.pay.find(y => y.month === m && y.token === st.token), amount = n * price;
+      if (ex && (ex.status === 'paid' || (ex.url && +ex.lessons === n && num_(ex.amount) === amount))) { skip++; return; }
+      const id = ex ? ex.id : randomToken_(12);
+      try {
+        const url = mCreateLink_(D, m, st, n, price, id);
+        const f = { month: m, token: st.token, name: st.name, phone: st.phone, slot: st.slot, lessons: n, amount, status: 'open', url, docId: '', createdAt: Date.now(), paidAt: '' };
+        if (ex) setRow_(D, 'pay', ex, f); else addRow_(D, 'pay', Object.assign({ id }, f));
+        made++;
+      } catch (e) { errs.push(st.name + ': ' + String(e.message || e).replace(/^Error:\s*/, '')); }
+      Utilities.sleep(300); // Morning מגביל לכ-3 בקשות בשנייה
+    });
+    PAY_MSG_ = (made ? 'נוצרו ' + made + ' קישורים' : 'לא נוצרו קישורים חדשים') + (skip ? ' · ' + skip + ' כבר היו' : '') + (errs.length ? '\nשגיאות:\n' + errs.join('\n') : '');
+  }
+  else if (act === 'payMark' && r) setRow_(D, 'pay', r, p.paid ? { status: 'paid', paidAt: Date.now() } : { status: 'open', paidAt: '' });
+  else if (act === 'payDelete' && r) { if (r.status === 'paid') throw new Error('אי אפשר למחוק תשלום ששולם'); delRow_(D, 'pay', r); }
+}
+
+/* ---- Morning API ---- */
+function mProps_() {
+  const p = PropertiesService.getScriptProperties().getProperties();
+  return { id: p.MORNING_ID || '', secret: p.MORNING_SECRET || '', sandbox: p.MORNING_SANDBOX === '1', plugin: p.MORNING_PLUGIN || '', hook: p.MORNING_HOOK || '' };
+}
+function mBase_(mp) { return mp.sandbox ? 'https://sandbox.d.greeninvoice.co.il/api/v1' : 'https://api.greeninvoice.co.il/api/v1'; }
+function mTokenClear_() { try { CacheService.getScriptCache().remove('mtok'); } catch (e) {} }
+function mJson_(res) { try { return JSON.parse(res.getContentText() || '{}'); } catch (e) { return {}; } }
+function mToken_() {
+  const c = CacheService.getScriptCache(), hit = c.get('mtok'); if (hit) return hit;
+  const mp = mProps_(); if (!mp.id || !mp.secret) throw new Error('Morning לא מחובר');
+  let tok = '';
+  // הדרך החדשה של Morning, ואם לא עובדת – הדרך הוותיקה של חשבונית ירוקה
+  try {
+    const r = UrlFetchApp.fetch(mp.sandbox ? 'https://api.sandbox.morning.dev/idp/v1/oauth/token' : 'https://api.morning.co/idp/v1/oauth/token', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      payload: JSON.stringify({ grant_type: 'client_credentials', client_id: mp.id, client_secret: mp.secret }) });
+    const d = mJson_(r); if (r.getResponseCode() < 300 && d.accessToken) tok = d.accessToken;
+  } catch (e) { console.log('morning idp token failed: ' + e); }
+  if (!tok) {
+    const r = UrlFetchApp.fetch(mBase_(mp) + '/account/token', { method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ id: mp.id, secret: mp.secret }) });
+    const d = mJson_(r); tok = d.token || (r.getHeaders() || {})['X-Authorization-Bearer'] || '';
+    if (!tok) throw new Error('Morning לא קיבל את המפתח. לבדוק שהעתקת נכון את ה-ID וה-Secret' + (d.errorMessage ? ' (' + d.errorMessage + ')' : ''));
+  }
+  c.put('mtok', tok, 20 * 60);
+  return tok;
+}
+function mFetch_(method, path, body, retry) {
+  const mp = mProps_();
+  const o = { method, muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + mToken_() } };
+  if (body) { o.contentType = 'application/json'; o.payload = JSON.stringify(body); }
+  const r = UrlFetchApp.fetch(mBase_(mp) + path, o), code = r.getResponseCode(), d = mJson_(r);
+  if (code === 401 && !retry) { mTokenClear_(); return mFetch_(method, path, body, true); }
+  if (code >= 300 || d.success === false || (d.errorCode && +d.errorCode !== 0)) {
+    console.log('morning ' + method + ' ' + path + ' → ' + code + ' ' + r.getContentText().slice(0, 500));
+    throw new Error('Morning: ' + (d.errorMessage || d.message || 'שגיאה ' + code));
+  }
+  return d;
+}
+/** מזהה הסליקה המחוברת ב-Morning (נשמר אחרי הפעם הראשונה). */
+function mPlugin_() {
+  const mp = mProps_(); if (mp.plugin) return mp.plugin;
+  const d = mFetch_('get', '/documents/info?type=320'), pl = (d.paymentPlugins || [])[0];
+  if (!pl || !pl.id) throw new Error('המפתח עובד, אבל לא נמצאה סליקה מחוברת ב-Morning. צריך לחבר סליקה (אשראי) בחשבון Morning');
+  PropertiesService.getScriptProperties().setProperty('MORNING_PLUGIN', pl.id);
+  return pl.id;
+}
+function mHook_() {
+  const mp = mProps_(); if (mp.hook) return mp.hook;
+  const h = randomToken_(24); PropertiesService.getScriptProperties().setProperty('MORNING_HOOK', h); return h;
+}
+/** יוצר ב-Morning דף תשלום לתלמיד/ה. מחזיר את הקישור. */
+function mCreateLink_(D, m, st, n, price, payId) {
+  const url = ScriptApp.getService().getUrl(), label = monthLabel_(m);
+  const dates = monthLessons_(D, m, st.slot).filter(l => !l.cancelled && st.since <= l.date).map(l => fmtD_(l.date)).join(', ');
+  const body = {
+    description: 'שיעורי קרמיקה – ' + label, type: 320, lang: 'he', currency: 'ILS', vatType: 1,
+    amount: n * price, maxPayments: 1, pluginId: mPlugin_(), group: 100,
+    client: { name: st.name, phone: st.phone || undefined },
+    income: [{ description: 'שיעור קרמיקה – ' + slotName_(st.slot) + ' – ' + label, quantity: n, price, currency: 'ILS', vatType: 1 }],
+    remarks: n + ' שיעורים' + (dates ? ': ' + dates : ''), custom: payId,
+  };
+  if (url) body.notifyUrl = url + '?pay=' + mHook_();
+  const d = mFetch_('post', '/payments/form', body);
+  if (!d.url) throw new Error('Morning לא החזיר קישור');
+  return d.url;
+}
+/** Morning שולח לכאן הודעה אחרי תשלום (notifyUrl). מסמנים את התשלום כ"שולם". */
+function doPost(e) {
+  const out = s => ContentService.createTextOutput(s);
+  try {
+    const P = Object.assign({}, (e && e.parameter) || {});
+    if (e && e.postData && /json/.test(e.postData.type || '')) { try { Object.assign(P, JSON.parse(e.postData.contents)); } catch (x) {} }
+    const hook = mProps_().hook;
+    if (!hook || clean_(P.pay) !== hook) return out('no');
+    const ref = clean_(P.external_data || P.custom || P.externalData);
+    console.log('morning notify: ref=' + ref + ' doc=' + (P.id || '') + ' keys=' + Object.keys(P).join(','));
+    if (P.id) { try { mFetch_('get', '/documents/' + encodeURIComponent(P.id)); } catch (x) { console.log('notify doc check failed: ' + x); return out('bad doc'); } }
+    withLock_(() => {
+      const D = load_(true), r = D.pay.find(x => x.id === ref);
+      if (!r || r.status === 'paid') return;
+      setRow_(D, 'pay', r, { status: 'paid', paidAt: Date.now(), docId: String(P.id || '').slice(0, 64) });
+      saveCache_(D);
+      notify_(D, 'תשלום התקבל: ' + r.name, r.name + ' שילם/ה ' + num_(r.amount) + ' ₪ על ' + r.lessons + ' שיעורים ב' + monthLabel_(r.month) + '.', 'לתשלומים');
+    });
+    return out('ok');
+  } catch (err) { console.log('doPost failed: ' + err); return out('error'); }
+}
+/** להריץ פעם אחת מהעורך אחרי העדכון, כדי לאשר ל-Google שהאפליקציה פונה ל-Morning. */
+function authorize() { UrlFetchApp.fetch('https://www.google.com', { muteHttpExceptions: true }); return 'ok'; }
