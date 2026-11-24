@@ -42,7 +42,7 @@ with free seats. Tal approves joins and makeups from an admin page and gets emai
 - Makeup requests need a free seat and an available credit; Tal approves.
 - Workshops (סדנאות): one-off events Tal opens from the admin "סדנאות" tab (name, date, hours, seats, optional
   price/description, optional "needs my approval", optional "students only"; "duplicate" copies one to a new date). Separate from regular lessons and credits. Approved students
-  see upcoming open workshops in their app; anyone can sign up (name + phone) from the workshop link `?w=<id>`.
+  see upcoming open workshops inside their weekly schedule (on the workshop's date, no separate list; also shown in the admin "השבוע" tab); anyone can sign up (name + phone) from the workshop link `?w=<id>`.
   A pending sign-up holds a seat. Students can cancel until it starts; Tal can add/remove people and close sign-up.
 - Inventory (מלאי, admin tab): items with qty, minimum, unit, optional category. An item is "to order" when min > 0 and
   qty <= min. When an item drops to its minimum Tal gets one email (Inventory.alerted), again only after it went back above.
